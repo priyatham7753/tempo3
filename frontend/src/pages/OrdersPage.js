@@ -54,26 +54,43 @@ const OrdersPage = () => {
     <div className="main-content">
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h1 className="page-title">My Orders</h1>
-          <p className="page-subtitle">Track and manage your orders</p>
+          <h1 className="page-title">Orders</h1>
+          <p className="page-subtitle">View and manage your purchase history.</p>
         </div>
         <button className="btn btn-secondary btn-sm" onClick={fetchOrders} id="refresh-orders-btn">
-          ↻ Refresh
+          Refresh Orders
         </button>
       </div>
 
-      {error && <div className="alert alert-error">⚠ {error}</div>}
+      {error && <div className="alert alert-error">{error}</div>}
 
       {loading ? (
-        <div className="loading-center">
-          <div className="spinner" />
-          <span>Loading orders...</span>
+        <div className="orders-list">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="order-card">
+               <div className="order-header" style={{ marginBottom: '1rem' }}>
+                 <div>
+                   <div className="skeleton skeleton-title" style={{ width: '120px', height: '1.25rem', marginBottom: '0.25rem' }}></div>
+                   <div className="skeleton skeleton-text" style={{ width: '150px' }}></div>
+                 </div>
+                 <div className="skeleton" style={{ width: '80px', height: '24px', borderRadius: '12px' }}></div>
+               </div>
+               <div style={{ paddingBottom: '1rem' }}>
+                 <div className="skeleton skeleton-text" style={{ width: '100%', marginBottom: '0.5rem' }}></div>
+                 <div className="skeleton skeleton-text" style={{ width: '80%' }}></div>
+               </div>
+               <div className="order-total" style={{ marginTop: '0' }}>
+                 <div className="skeleton skeleton-text" style={{ width: '80px', margin: 0 }}></div>
+                 <div className="skeleton skeleton-title" style={{ width: '60px', height: '1.5rem', margin: 0 }}></div>
+               </div>
+            </div>
+          ))}
         </div>
       ) : orders.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">📋</div>
           <h3>No orders yet</h3>
-          <p>Browse products and place your first order!</p>
+          <p>When you place an order, it will appear here.</p>
         </div>
       ) : (
         <div className="orders-list">
@@ -84,7 +101,7 @@ const OrdersPage = () => {
                   <div className="order-id">Order #{order.id.slice(-8).toUpperCase()}</div>
                   <div className="order-date">{formatDate(order.created_at)}</div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                   <span className={`order-status ${STATUS_CLASSES[order.status] || 'status-pending'}`}>
                     {order.status}
                   </span>
@@ -107,14 +124,15 @@ const OrdersPage = () => {
                     <div className="order-item-name">
                       {item.product_name} <span style={{ color: 'var(--text-muted)' }}>×{item.quantity}</span>
                     </div>
-                    <div>${item.subtotal.toFixed(2)}</div>
+                    <div style={{ fontWeight: 500 }}>${item.subtotal.toFixed(2)}</div>
                   </div>
                 ))}
               </div>
 
               {order.shipping_address && (
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-                  📦 {order.shipping_address}
+                <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1rem', background: 'var(--bg-hover)', padding: '0.75rem', borderRadius: 'var(--radius-sm)' }}>
+                  <span style={{ fontWeight: 500, display: 'block', marginBottom: '0.25rem' }}>Shipping Address</span>
+                  {order.shipping_address}
                 </div>
               )}
 

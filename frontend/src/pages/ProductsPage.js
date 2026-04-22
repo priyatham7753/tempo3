@@ -50,39 +50,41 @@ const ProductsPage = () => {
 
   return (
     <div className="app-wrapper">
-      {/* Hero */}
       <div className="main-content">
+        {/* Hero */}
         <div className="hero">
-          <h1 className="hero-title">Discover Premium Products</h1>
-          <p className="hero-subtitle">Shop from our curated collection of top-quality products. Fast shipping, easy returns.</p>
+          <h1 className="hero-title">Everything you need,<br />all in one place.</h1>
+          <p className="hero-subtitle">Premium products, fast shipping, and seamless checkout. Experience the new standard of online shopping.</p>
           <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
             <button className="btn btn-primary" onClick={() => document.getElementById('products-section').scrollIntoView({ behavior: 'smooth' })}>
-              Browse Products
+              Start Browsing
             </button>
             <button className="btn btn-secondary" onClick={() => setCartOpen(true)}>
-              🛒 Cart {totalItems > 0 && <span className="cart-badge">{totalItems}</span>}
+              View Cart {totalItems > 0 && <span className="cart-badge">{totalItems}</span>}
             </button>
           </div>
           <div className="hero-stats">
-            <div className="hero-stat"><div className="hero-stat-number">{products.length}+</div><div className="hero-stat-label">Products</div></div>
-            <div className="hero-stat"><div className="hero-stat-number">4</div><div className="hero-stat-label">Microservices</div></div>
+            <div className="hero-stat"><div className="hero-stat-number">{loading ? '...' : `${products.length}+`}</div><div className="hero-stat-label">Products</div></div>
+            <div className="hero-stat"><div className="hero-stat-number">24/7</div><div className="hero-stat-label">Support</div></div>
             <div className="hero-stat"><div className="hero-stat-number">99.9%</div><div className="hero-stat-label">Uptime</div></div>
           </div>
         </div>
 
         {/* Filters */}
-        <div id="products-section" className="page-header">
-          <h2 className="page-title">All Products</h2>
-          <p className="page-subtitle">
-            Welcome back, <strong style={{ color: '#a78bfa' }}>{user?.name}</strong>! Find something you love.
-          </p>
+        <div id="products-section" className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '1rem' }}>
+          <div>
+            <h2 className="page-title">Products</h2>
+            <p className="page-subtitle">
+              Welcome back, <strong>{user?.name}</strong>.
+            </p>
+          </div>
         </div>
 
         <div className="filter-bar">
           <input
             className="filter-input"
             type="text"
-            placeholder="🔍  Search products..."
+            placeholder="Search products..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             id="search-input"
@@ -95,23 +97,36 @@ const ProductsPage = () => {
           >
             {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
-          <button className="btn btn-secondary" onClick={() => setCartOpen(true)} id="open-cart-btn">
-            🛒 Cart {totalItems > 0 && <span className="cart-badge">{totalItems}</span>}
+          <button className="btn btn-secondary" onClick={() => setCartOpen(true)} id="open-cart-btn" style={{ marginLeft: 'auto' }}>
+            Cart {totalItems > 0 && <span className="cart-badge">{totalItems}</span>}
           </button>
         </div>
 
-        {error && <div className="alert alert-error">⚠ {error}</div>}
+        {error && <div className="alert alert-error">{error}</div>}
 
         {loading ? (
-          <div className="loading-center">
-            <div className="spinner" />
-            <span>Loading products...</span>
+          <div className="products-grid">
+            {[1, 2, 3, 4, 5, 6].map(i => (
+              <div key={i} className="product-card skeleton-card">
+                <div className="skeleton" style={{ height: '200px', width: '100%' }}></div>
+                <div className="product-body">
+                   <div className="skeleton skeleton-text" style={{ width: '40%' }}></div>
+                   <div className="skeleton skeleton-title"></div>
+                   <div className="skeleton skeleton-text" style={{ width: '100%' }}></div>
+                   <div className="skeleton skeleton-text" style={{ width: '80%' }}></div>
+                   <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '1rem' }}>
+                      <div className="skeleton" style={{ height: '24px', width: '60px', borderRadius: '4px' }}></div>
+                      <div className="skeleton" style={{ height: '36px', width: '80px', borderRadius: '6px' }}></div>
+                   </div>
+                </div>
+              </div>
+            ))}
           </div>
         ) : products.length === 0 ? (
           <div className="empty-state">
-            <div className="empty-state-icon">📦</div>
+            <div className="empty-state-icon">🔍</div>
             <h3>No products found</h3>
-            <p>Try a different search term or category</p>
+            <p>We couldn't find anything matching your search or category.</p>
           </div>
         ) : (
           <div className="products-grid">
@@ -125,7 +140,9 @@ const ProductsPage = () => {
                     onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
                   />
                 ) : null}
-                <div className="product-image-placeholder" style={{ display: product.imageUrl ? 'none' : 'flex' }}>📦</div>
+                <div className="product-image-placeholder" style={{ display: product.imageUrl ? 'none' : 'flex' }}>
+                   <span style={{ opacity: 0.5, fontSize: '1.5rem' }}>Image Unavailable</span>
+                </div>
                 <div className="product-body">
                   <div className="product-category">{product.category}</div>
                   <div className="product-name">{product.name}</div>
@@ -143,7 +160,7 @@ const ProductsPage = () => {
                       disabled={product.stock === 0}
                       id={`add-cart-${product._id}`}
                     >
-                      {addedMap[product._id] ? '✓ Added!' : '+ Cart'}
+                      {addedMap[product._id] ? 'Added' : 'Add to Cart'}
                     </button>
                   </div>
                 </div>

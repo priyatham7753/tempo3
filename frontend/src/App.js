@@ -13,11 +13,10 @@ const LoadingScreen = () => (
     minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
     flexDirection: 'column', gap: '1rem', background: 'var(--bg-primary)'
   }}>
-    <div className="spinner" style={{ width: 48, height: 48 }} />
-    <div style={{ fontFamily: 'var(--font-heading)', fontSize: '1.5rem', fontWeight: 700, background: 'var(--gradient-text)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+    <div className="spinner" style={{ width: 40, height: 40, borderWidth: '3px' }} />
+    <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '1.25rem', letterSpacing: '-0.02em' }}>
       ShopMesh
     </div>
-    <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Loading...</div>
   </div>
 );
 

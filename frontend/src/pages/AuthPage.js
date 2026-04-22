@@ -44,13 +44,10 @@ const AuthPage = () => {
 
   return (
     <div className="auth-wrapper">
-      <div className="auth-bg-orb auth-bg-orb-1" />
-      <div className="auth-bg-orb auth-bg-orb-2" />
-
       <div className="auth-card">
         <div className="auth-logo">ShopMesh</div>
         <p className="auth-subtitle">
-          {mode === 'login' ? 'Welcome back! Sign in to continue.' : 'Create your account to get started.'}
+          {mode === 'login' ? 'Sign in to your account to continue' : 'Create an account to get started'}
         </p>
 
         {/* Tabs */}
@@ -61,7 +58,7 @@ const AuthPage = () => {
 
         {error && (
           <div className="alert alert-error">
-            <span>⚠</span> {error}
+            <span style={{ fontWeight: 600 }}>!</span> {error}
           </div>
         )}
 
@@ -93,7 +90,7 @@ const AuthPage = () => {
             />
           </div>
 
-          <button type="submit" className="btn btn-primary btn-full" disabled={loading} style={{ marginTop: '0.5rem' }}>
+          <button type="submit" className="btn btn-primary btn-full" disabled={loading} style={{ marginTop: '0.5rem', padding: '0.75rem' }}>
             {loading ? (
               <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> Processing...</>
             ) : (
