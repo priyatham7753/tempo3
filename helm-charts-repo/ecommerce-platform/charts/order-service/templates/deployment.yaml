@@ -1,0 +1,136 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+  namespace: {{ .Values.global.namespaces.backend }}
+  labels:
+    app: order-service
+    environment: {{ .Values.global.environment }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: order-service
+  template:
+    metadata:
+      labels:
+        app: order-service
+        environment: {{ .Values.global.environment }}
+    spec:
+      containers:
+        - name: order-service
+          image: "{{ .Values.global.imageRegistry }}/order-service:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.port }}
+          envFrom:
+            - configMapRef:
+                name: order-config
+          env:
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: order-secret
+                  key: MONGO_URI
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: order-secret
+                  key: JWT_SECRET
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.port }}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu:    {{ .Values.global.resources.requests.cpu | quote }}
+              memory: {{ .Values.global.resources.requests.memory | quote }}
+            limits:
+              cpu:    {{ .Values.global.resources.limits.cpu | quote }}
+              memory: {{ .Values.global.resources.limits.memory | quote }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+  namespace: {{ .Values.global.namespaces.backend }}
+  labels:
+    app: order-service
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    app: order-service
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: {{ .Values.port }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: order-service-netpol
+  namespace: {{ .Values.global.namespaces.backend }}
+spec:
+  podSelector:
+    matchLabels:
+      app: order-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.global.namespaces.gateway }}
+      ports:
+        - port: {{ .Values.port }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.global.namespaces.frontend }}
+      ports:
+        - port: {{ .Values.port }}
+  egress:
+    # Own MongoDB
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.global.namespaces.database }}
+          podSelector:
+            matchLabels:
+              app: mongodb-order
+      ports:
+        - port: 27017
+    # auth-service (token validation)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: auth-service
+      ports:
+        - port: 3001
+    # product-service (product lookup)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: product-service
+      ports:
+        - port: 3002
+    # DNS
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

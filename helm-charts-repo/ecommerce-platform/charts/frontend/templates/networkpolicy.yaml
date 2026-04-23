@@ -1,0 +1,36 @@
+# Allow ingress to frontend from gateway namespace only
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend-allow-ingress
+  namespace: {{ .Values.global.namespaces.frontend }}
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.global.namespaces.gateway }}
+      ports:
+        - port: {{ .Values.port }}
+  egress:
+    # Allow calls to backend services
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.global.namespaces.backend }}
+      ports:
+        - port: 3001
+        - port: 3002
+        - port: 8000
+    # Allow DNS
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

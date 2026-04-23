@@ -1,0 +1,21 @@
+# mongodb-auth subchart defaults
+fullname: mongodb-auth
+ownerApp: auth-service
+database:  authdb
+
+image:
+  repository: mongo
+  tag:        "7.0"
+  pullPolicy: IfNotPresent
+
+storage:
+  size:             5Gi
+  storageClassName: nfs-storage
+
+resources:
+  requests:
+    cpu:    "100m"
+    memory: "256Mi"
+  limits:
+    cpu:    "500m"
+    memory: "512Mi"

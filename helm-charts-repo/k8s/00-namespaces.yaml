@@ -1,0 +1,41 @@
+# =============================================================================
+# Kubernetes Namespaces — all four functional namespaces
+# These are fixed infrastructure; they NEVER change based on environment.
+# Dev vs Prod differentiation is done ONLY via Helm values.
+# =============================================================================
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: frontend
+  labels:
+    kubernetes.io/metadata.name: frontend
+    app.kubernetes.io/managed-by: helm
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: backend
+  labels:
+    kubernetes.io/metadata.name: backend
+    app.kubernetes.io/managed-by: helm
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: database
+  labels:
+    kubernetes.io/metadata.name: database
+    app.kubernetes.io/managed-by: helm
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gateway
+  labels:
+    kubernetes.io/metadata.name: gateway
+    app.kubernetes.io/managed-by: helm

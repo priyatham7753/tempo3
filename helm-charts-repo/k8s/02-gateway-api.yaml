@@ -1,0 +1,158 @@
+# =============================================================================
+# Kubernetes Gateway API — NGINX Gateway Fabric
+# =============================================================================
+# Controller:  NGINX Gateway Fabric
+# Install:     kubectl apply -f https://github.com/nginx/nginx-gateway-fabric/
+#                releases/download/v1.4.0/crds.yaml
+#              helm install ngf oci://ghcr.io/nginx/charts/nginx-gateway-fabric \
+#                --namespace gateway --create-namespace
+#
+# Route strategy (all routes cross namespaces — ReferenceGrant required):
+#   /             → frontend.frontend:80
+#   /api/auth     → auth-service.backend:3001
+#   /api/products → product-service.backend:3002
+#   /api/orders   → order-service.backend:8000
+# =============================================================================
+
+---
+# ── GatewayClass ─────────────────────────────────────────────────────────────
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: nginx
+spec:
+  controllerName: gateway.nginx.org/nginx-gateway-controller
+
+---
+# ── Gateway ──────────────────────────────────────────────────────────────────
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: ecommerce-gateway
+  namespace: gateway
+spec:
+  gatewayClassName: nginx
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: All     # Allow HTTPRoutes from any namespace to attach
+
+---
+# ── ReferenceGrant: gateway → frontend ───────────────────────────────────────
+# Allows the Gateway in 'gateway' namespace to forward to services in 'frontend'
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-gateway-to-frontend
+  namespace: frontend
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: gateway
+  to:
+    - group: ""
+      kind: Service
+
+---
+# ── ReferenceGrant: gateway → backend ────────────────────────────────────────
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-gateway-to-backend
+  namespace: backend
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: gateway
+  to:
+    - group: ""
+      kind: Service
+
+---
+# ── HTTPRoute: Frontend — catch-all "/" ───────────────────────────────────────
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: frontend-route
+  namespace: gateway
+spec:
+  parentRefs:
+    - name: ecommerce-gateway
+      namespace: gateway
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: frontend
+          namespace: frontend
+          port: 80
+
+---
+# ── HTTPRoute: Auth — "/api/auth" ─────────────────────────────────────────────
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: auth-route
+  namespace: gateway
+spec:
+  parentRefs:
+    - name: ecommerce-gateway
+      namespace: gateway
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/auth
+      backendRefs:
+        - name: auth-service
+          namespace: backend
+          port: 3001
+
+---
+# ── HTTPRoute: Product — "/api/products" ──────────────────────────────────────
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: product-route
+  namespace: gateway
+spec:
+  parentRefs:
+    - name: ecommerce-gateway
+      namespace: gateway
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/products
+      backendRefs:
+        - name: product-service
+          namespace: backend
+          port: 3002
+
+---
+# ── HTTPRoute: Order — "/api/orders" ──────────────────────────────────────────
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: order-route
+  namespace: gateway
+spec:
+  parentRefs:
+    - name: ecommerce-gateway
+      namespace: gateway
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/orders
+      backendRefs:
+        - name: order-service
+          namespace: backend
+          port: 8000

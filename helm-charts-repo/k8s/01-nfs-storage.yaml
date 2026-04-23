@@ -1,0 +1,75 @@
+# =============================================================================
+# NFS-backed Storage Class + Persistent Volumes
+# =============================================================================
+# PVs are pre-provisioned for each MongoDB instance.
+# PVCs (in database namespace) are created by the mongodb-* subcharts
+# and bind to these PVs via matchLabels selector.
+# =============================================================================
+
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: nfs-storage
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+
+---
+# ── Persistent Volume: mongodb-auth ──────────────────────────────────────────
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mongodb-auth-pv
+  labels:
+    pv-name: mongodb-auth-pv
+spec:
+  capacity:
+    storage: 20Gi       # Accommodate both dev (2Gi PVC) and prod (20Gi PVC)
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs-storage
+  nfs:
+    server: <NFS_SERVER_IP>   # Replace with your NFS server IP
+    path: /exports/mongodb-auth
+
+---
+# ── Persistent Volume: mongodb-product ───────────────────────────────────────
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mongodb-product-pv
+  labels:
+    pv-name: mongodb-product-pv
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs-storage
+  nfs:
+    server: <NFS_SERVER_IP>
+    path: /exports/mongodb-product
+
+---
+# ── Persistent Volume: mongodb-order ─────────────────────────────────────────
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mongodb-order-pv
+  labels:
+    pv-name: mongodb-order-pv
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs-storage
+  nfs:
+    server: <NFS_SERVER_IP>
+    path: /exports/mongodb-order

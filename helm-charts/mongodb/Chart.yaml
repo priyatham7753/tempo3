@@ -1,6 +1,0 @@
-apiVersion: v2
-name: mongodb
-description: Reusable MongoDB StatefulSet chart for ShopMesh microservices
-type: application
-version: 1.0.0
-appVersion: "7.0"

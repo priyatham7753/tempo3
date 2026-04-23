@@ -1,0 +1,52 @@
+# DEV environment overrides — layered on top of values.yaml
+# Image tags: commit SHA only (e.g. sha-a1b2c3d)
+# Replicas: 1 per service
+# Resources: reduced
+
+global:
+  environment: dev
+  mongodb:
+    password: devpassword123
+  resources:
+    requests:
+      cpu:    "50m"
+      memory: "64Mi"
+    limits:
+      cpu:    "300m"
+      memory: "256Mi"
+
+frontend:
+  replicaCount: 1
+  image:
+    tag: "sha-abc1234"    # ← updated by CI on every develop push
+
+auth-service:
+  replicaCount: 1
+  image:
+    tag: "sha-abc1234"
+  env:
+    NODE_ENV: "development"
+
+product-service:
+  replicaCount: 1
+  image:
+    tag: "sha-abc1234"
+  env:
+    NODE_ENV: "development"
+
+order-service:
+  replicaCount: 1
+  image:
+    tag: "sha-abc1234"
+
+mongodb-auth:
+  storage:
+    size: 2Gi
+
+mongodb-product:
+  storage:
+    size: 2Gi
+
+mongodb-order:
+  storage:
+    size: 2Gi

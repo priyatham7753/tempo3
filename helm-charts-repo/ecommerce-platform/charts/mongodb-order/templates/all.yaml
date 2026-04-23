@@ -1,0 +1,146 @@
+# ── Secret ────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Values.fullname }}-secret
+  namespace: {{ .Values.global.namespaces.database }}
+  labels:
+    app: {{ .Values.fullname }}
+type: Opaque
+data:
+  MONGO_ROOT_USERNAME: {{ .Values.global.mongodb.username | b64enc | quote }}
+  MONGO_ROOT_PASSWORD: {{ .Values.global.mongodb.password | b64enc | quote }}
+---
+# ── Headless Service (required by StatefulSet for stable DNS) ─────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.fullname }}-headless
+  namespace: {{ .Values.global.namespaces.database }}
+  labels:
+    app: {{ .Values.fullname }}
+spec:
+  clusterIP: None
+  selector:
+    app: {{ .Values.fullname }}
+  ports:
+    - name: mongodb
+      port: 27017
+      targetPort: 27017
+---
+# ── PersistentVolumeClaim (NFS-backed) ────────────────────────────────────────
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.fullname }}-pvc
+  namespace: {{ .Values.global.namespaces.database }}
+  labels:
+    app: {{ .Values.fullname }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.storage.storageClassName }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.size }}
+  selector:
+    matchLabels:
+      pv-name: {{ .Values.fullname }}-pv
+---
+# ── StatefulSet ───────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Values.fullname }}
+  namespace: {{ .Values.global.namespaces.database }}
+  labels:
+    app: {{ .Values.fullname }}
+spec:
+  serviceName: {{ .Values.fullname }}-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.fullname }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.fullname }}
+    spec:
+      containers:
+        - name: mongodb
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 27017
+              name: mongodb
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.fullname }}-secret
+                  key: MONGO_ROOT_USERNAME
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.fullname }}-secret
+                  key: MONGO_ROOT_PASSWORD
+            - name: MONGO_INITDB_DATABASE
+              value: {{ .Values.database | quote }}
+          livenessProbe:
+            exec:
+              command: ["mongosh", "--eval", "db.adminCommand('ping')"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          readinessProbe:
+            exec:
+              command: ["mongosh", "--eval", "db.adminCommand('ping')"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu:    {{ .Values.resources.requests.cpu | quote }}
+              memory: {{ .Values.resources.requests.memory | quote }}
+            limits:
+              cpu:    {{ .Values.resources.limits.cpu | quote }}
+              memory: {{ .Values.resources.limits.memory | quote }}
+          volumeMounts:
+            - name: data
+              mountPath: /data/db
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Values.fullname }}-pvc
+---
+# ── NetworkPolicy — ONLY ownerApp in backend can reach this MongoDB ───────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Values.fullname }}-netpol
+  namespace: {{ .Values.global.namespaces.database }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ .Values.fullname }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.global.namespaces.backend }}
+          podSelector:
+            matchLabels:
+              app: {{ .Values.ownerApp }}
+      ports:
+        - port: 27017
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

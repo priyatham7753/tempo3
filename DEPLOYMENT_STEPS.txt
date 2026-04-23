@@ -1,477 +1,537 @@
 ================================================================================
-  SHOPMESH — COMPLETE CLUSTER DEPLOYMENT GUIDE
-  Step-by-step commands to run inside your Kubernetes cluster
+  ECOMMERCE PLATFORM — COMPLETE CLUSTER DEPLOYMENT GUIDE
+  Umbrella Helm Chart | Functional Namespaces | NGINX Gateway Fabric | ArgoCD
 ================================================================================
 
-BEFORE YOU START — 3 values to replace throughout this guide:
-  YOUR_NFS_IP      = IP address of your NFS server (e.g. 10.0.0.10)
-  YOUR_GITHUB_ORG  = Your GitHub username (e.g. priyatham7753)
-  YOUR_JWT_SECRET  = Any random 32+ character string
+BEFORE YOU START — replace these 3 values everywhere in this guide:
+  YOUR_NFS_IP     = IP of your NFS server          (e.g. 192.168.1.50)
+  YOUR_DOCKER_ORG = Your Docker Hub username        (e.g. myrepo)
+  YOUR_JWT_SECRET = Any random 32+ character string
+
+NAMESPACE STRATEGY (read this before anything else):
+  frontend  = React frontend pods
+  backend   = auth-service, product-service, order-service pods
+  database  = all 3 MongoDB StatefulSets
+  gateway   = NGINX Gateway Fabric controller + HTTPRoutes
+
+  Dev vs Prod is controlled ONLY via Helm values files.
+  There are NO dev/prod namespaces.
 
 ================================================================================
-PHASE 1 — PREREQUISITES (run on your local machine with kubectl access)
+PHASE 1 — PREREQUISITES
 ================================================================================
 
-STEP 1: Verify kubectl is connected to your cluster
+STEP 1: Verify kubectl connectivity
 -------------------------------------------------------
   kubectl cluster-info
   kubectl get nodes
-
-  Expected: nodes listed as Ready
+  # Expected: nodes show STATUS=Ready
 
 --------------------------------------------------------------------------------
 
-STEP 2: Clone the repository to your local machine
+STEP 2: Clone the repository
 -------------------------------------------------------
   git clone https://github.com/priyatham7753/tempo2.git
   cd tempo2
 
+  # Confirm the umbrella chart exists
+  ls helm-charts-repo/ecommerce-platform/
+  # Expected: Chart.yaml  values.yaml  values-dev.yaml  values-prod.yaml  charts/
+
+--------------------------------------------------------------------------------
+
+STEP 3: Install required tools (if not already installed)
+-------------------------------------------------------
+  # Helm 3.x
+  curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+  helm version
+
 ================================================================================
-PHASE 2 — NFS SERVER SETUP (run on your NFS server machine via SSH)
+PHASE 2 — NFS SERVER SETUP (run on your NFS server via SSH)
 ================================================================================
 
-STEP 3: SSH into your NFS server and set up exports
+STEP 4: Create NFS export directories
 -------------------------------------------------------
   ssh user@YOUR_NFS_IP
 
-  # Create directories
-  sudo mkdir -p /exports/auth-mongodb
-  sudo mkdir -p /exports/product-mongodb
-  sudo mkdir -p /exports/order-mongodb
+  sudo mkdir -p /exports/mongodb-auth
+  sudo mkdir -p /exports/mongodb-product
+  sudo mkdir -p /exports/mongodb-order
 
-  # Set open permissions
-  sudo chmod 777 /exports/auth-mongodb
-  sudo chmod 777 /exports/product-mongodb
-  sudo chmod 777 /exports/order-mongodb
+  sudo chmod 777 /exports/mongodb-auth
+  sudo chmod 777 /exports/mongodb-product
+  sudo chmod 777 /exports/mongodb-order
 
-  # Add NFS exports
-  echo "/exports/auth-mongodb    *(rw,sync,no_subtree_check,no_root_squash)" | sudo tee -a /etc/exports
-  echo "/exports/product-mongodb *(rw,sync,no_subtree_check,no_root_squash)" | sudo tee -a /etc/exports
-  echo "/exports/order-mongodb   *(rw,sync,no_subtree_check,no_root_squash)" | sudo tee -a /etc/exports
+  # Add exports
+  echo "/exports/mongodb-auth    *(rw,sync,no_subtree_check,no_root_squash)" | sudo tee -a /etc/exports
+  echo "/exports/mongodb-product *(rw,sync,no_subtree_check,no_root_squash)" | sudo tee -a /etc/exports
+  echo "/exports/mongodb-order   *(rw,sync,no_subtree_check,no_root_squash)" | sudo tee -a /etc/exports
 
-  # Apply exports
   sudo exportfs -ra
   sudo systemctl restart nfs-kernel-server
 
-  # Verify exports are active
+  # Verify
   showmount -e localhost
+  # Expected: /exports/mongodb-auth, /exports/mongodb-product, /exports/mongodb-order
 
-  # Exit SSH
   exit
 
 --------------------------------------------------------------------------------
 
-STEP 4: Install NFS client on ALL Kubernetes worker nodes
+STEP 5: Install NFS client on ALL Kubernetes worker nodes
 -------------------------------------------------------
-  # SSH into each node and run:
-  sudo apt-get install -y nfs-common     # Ubuntu/Debian
+  # SSH into each worker node and run:
+  sudo apt-get install -y nfs-common       # Ubuntu/Debian
   # OR
-  sudo yum install -y nfs-utils          # CentOS/RHEL
+  sudo yum install -y nfs-utils            # CentOS/RHEL
 
-  # Verify NFS is reachable from a node:
+  # Test NFS is reachable from the node:
   showmount -e YOUR_NFS_IP
 
 ================================================================================
-PHASE 3 — KUBERNETES BASE SETUP (run from your local machine)
+PHASE 3 — CONFIGURE VALUES FILES
 ================================================================================
 
-STEP 5: Update NFS server IP in the storage manifest
+STEP 6: Set NFS server IP in the storage manifest
 -------------------------------------------------------
-  # Open k8s/01-nfs-storage.yaml and replace 10.0.0.10 with YOUR_NFS_IP
-  # Do this for all 3 PersistentVolume entries (auth, product, order)
+  # Linux/Mac:
+  sed -i 's/<NFS_SERVER_IP>/YOUR_NFS_IP/g' helm-charts-repo/k8s/01-nfs-storage.yaml
+  sed -i 's/10.0.0.10/YOUR_NFS_IP/g'       k8s/01-nfs-storage.yaml
 
-  # On Linux/Mac:
-  sed -i 's/10.0.0.10/YOUR_NFS_IP/g' k8s/01-nfs-storage.yaml
+  # Windows PowerShell:
+  (Get-Content helm-charts-repo\k8s\01-nfs-storage.yaml) `
+    -replace '<NFS_SERVER_IP>','YOUR_NFS_IP' | `
+    Set-Content helm-charts-repo\k8s\01-nfs-storage.yaml
 
-  # On Windows PowerShell:
-  (Get-Content k8s\01-nfs-storage.yaml) -replace '10.0.0.10','YOUR_NFS_IP' | Set-Content k8s\01-nfs-storage.yaml
+  (Get-Content k8s\01-nfs-storage.yaml) `
+    -replace '10.0.0.10','YOUR_NFS_IP' | `
+    Set-Content k8s\01-nfs-storage.yaml
 
 --------------------------------------------------------------------------------
 
-STEP 6: Update GitHub org in all Helm values.yaml files
+STEP 7: Set Docker registry in umbrella values.yaml
 -------------------------------------------------------
-  # Open each file below and replace YOUR_GITHUB_ORG with your actual GitHub username:
-  #   helm-charts/auth-chart/values.yaml        (image.repository)
-  #   helm-charts/product-chart/values.yaml      (image.repository)
-  #   helm-charts/order-chart/values.yaml        (image.repository)
-  #   helm-charts/frontend-chart/values.yaml     (image.repository)
+  # Open helm-charts-repo/ecommerce-platform/values.yaml
+  # Change line:  imageRegistry: docker.io/myrepo
+  # To:           imageRegistry: docker.io/YOUR_DOCKER_ORG
 
-  # On Linux/Mac:
-  find helm-charts -name "values.yaml" -exec sed -i 's/YOUR_GITHUB_ORG/priyatham7753/g' {} \;
+  # Linux/Mac:
+  sed -i 's|docker.io/myrepo|docker.io/YOUR_DOCKER_ORG|g' \
+    helm-charts-repo/ecommerce-platform/values.yaml
 
-  # On Windows PowerShell:
-  Get-ChildItem -Path helm-charts -Filter "values.yaml" -Recurse | ForEach-Object {
-    (Get-Content $_.FullName) -replace 'YOUR_GITHUB_ORG','priyatham7753' | Set-Content $_.FullName
-  }
+  # Windows PowerShell:
+  (Get-Content helm-charts-repo\ecommerce-platform\values.yaml) `
+    -replace 'docker.io/myrepo','docker.io/YOUR_DOCKER_ORG' | `
+    Set-Content helm-charts-repo\ecommerce-platform\values.yaml
 
 --------------------------------------------------------------------------------
 
-STEP 7: Update JWT secret in all Helm values.yaml files
+STEP 8: Set JWT secret in values.yaml
 -------------------------------------------------------
-  # Replace CHANGE_ME_JWT_SECRET_MIN_32_CHARS_LONG with a real secret
-  # Example secret: MyS3cur3JWT$ecretKey_2024_ShopMesh
+  # Linux/Mac:
+  sed -i 's/CHANGE_ME_JWT_SECRET_MIN_32_CHARS_LONG/YOUR_JWT_SECRET/g' \
+    helm-charts-repo/ecommerce-platform/values.yaml
 
-  # On Linux/Mac:
-  find helm-charts -name "values.yaml" -exec sed -i 's/CHANGE_ME_JWT_SECRET_MIN_32_CHARS_LONG/YOUR_JWT_SECRET/g' {} \;
+  # Windows PowerShell:
+  (Get-Content helm-charts-repo\ecommerce-platform\values.yaml) `
+    -replace 'CHANGE_ME_JWT_SECRET_MIN_32_CHARS_LONG','YOUR_JWT_SECRET' | `
+    Set-Content helm-charts-repo\ecommerce-platform\values.yaml
 
---------------------------------------------------------------------------------
+  # Also update values-dev.yaml and values-prod.yaml:
+  # DEV — replace DEV_JWT_SECRET_CHANGE_ME_MIN_32_CHARS_LONG with YOUR_JWT_SECRET
+  # PROD — replace PROD_JWT_SECRET_CHANGE_ME_MIN_32_CHARS_LONG with YOUR_JWT_SECRET
 
-STEP 8: Create all Kubernetes namespaces and default-deny network policies
+================================================================================
+PHASE 4 — KUBERNETES NAMESPACES
+================================================================================
+
+STEP 9: Create all functional namespaces
 -------------------------------------------------------
+  # Using the existing capstone k8s manifests:
   kubectl apply -f k8s/00-namespaces.yaml
 
-  # Verify
+  # Verify namespaces exist
   kubectl get namespaces
-  # Should see: frontend, backend, database, gateway
+  # Must see: frontend, backend, database, gateway
 
+  # Verify default-deny NetworkPolicies are in place
   kubectl get networkpolicy -A
-  # Should see: default-deny-all and allow-dns-egress in each namespace
+  # Must see: default-deny-all in frontend, backend, database namespaces
 
 ================================================================================
-PHASE 4 — STORAGE SETUP
+PHASE 5 — NFS STORAGE
 ================================================================================
 
-STEP 9: Create NFS StorageClass and PersistentVolumes
+STEP 10: Apply StorageClass and PersistentVolumes
 -------------------------------------------------------
+  # Using the existing capstone k8s manifest (already has your NFS IP from Step 6):
   kubectl apply -f k8s/01-nfs-storage.yaml
 
   # Verify StorageClass
   kubectl get storageclass
-  # Should see: nfs-storage
+  # Must see: nfs-storage
 
   # Verify PersistentVolumes
   kubectl get pv
-  # Should see: auth-mongodb-pv, product-mongodb-pv, order-mongodb-pv
+  # Must see: auth-mongodb-pv, product-mongodb-pv, order-mongodb-pv
   # STATUS must be: Available
 
 ================================================================================
-PHASE 5 — GATEWAY API (KGATEWAY)
+PHASE 6 — GATEWAY API (NGINX GATEWAY FABRIC)
 ================================================================================
 
-STEP 10: Install Gateway API CRDs
+STEP 11: Install Gateway API CRDs
 -------------------------------------------------------
   kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.1.0/standard-install.yaml
 
   # Verify CRDs are installed
-  kubectl get crd | grep gateway
-  # Should see: gateways, gatewayclasses, httproutes, etc.
+  kubectl get crd | grep gateway.networking.k8s.io
+  # Must see: gateways, gatewayclasses, httproutes, referencegrants
 
 --------------------------------------------------------------------------------
 
-STEP 11: Install kgateway
+STEP 12: Install NGINX Gateway Fabric controller
 -------------------------------------------------------
-  # Install kgateway CRDs
-  helm install kgateway-crds oci://cr.kgateway.dev/kgateway-helm/kgateway-crds \
-    --namespace kgateway-system \
+  # Install NGINX Gateway Fabric CRDs
+  kubectl apply -f https://raw.githubusercontent.com/nginx/nginx-gateway-fabric/v1.4.0/deploy/crds.yaml
+
+  # Install NGINX Gateway Fabric via Helm
+  helm install ngf oci://ghcr.io/nginx/charts/nginx-gateway-fabric \
+    --namespace gateway \
     --create-namespace \
-    --version 1.0.0
+    --set service.type=LoadBalancer \
+    --version 1.4.0
 
-  # Install kgateway controller
-  helm install kgateway oci://cr.kgateway.dev/kgateway-helm/kgateway \
-    --namespace kgateway-system \
-    --version 1.0.0
+  # Wait for controller pod to be Running
+  kubectl rollout status deployment/ngf-nginx-gateway-fabric -n gateway --timeout=120s
 
-  # Verify kgateway controller pod is Running
-  kubectl get pods -n kgateway-system
-
-  # Wait for kgateway controller to be ready
-  kubectl wait --for=condition=available deployment/kgateway \
-    -n kgateway-system --timeout=120s
-
-  # After Step 12 (Gateway manifest), kgateway provisions
-  # an Envoy proxy Deployment + LoadBalancer Service in the 'gateway' namespace.
-  # Check the proxy once Step 12 is done:
-  kubectl get pods -n gateway
+  # Check the gateway LoadBalancer IP (you will use this to test at the end)
   kubectl get svc -n gateway
-  # Note the EXTERNAL-IP — this is your public gateway IP
+  # Note the EXTERNAL-IP — this is your app's public entry point
 
 --------------------------------------------------------------------------------
 
-STEP 12: Apply Gateway routing rules
+STEP 13: Apply Gateway routing rules
 -------------------------------------------------------
+  # Using existing capstone manifest (already configured for NGINX GF):
   kubectl apply -f k8s/02-gateway-api.yaml
 
   # Verify
+  kubectl get gatewayclass
+  # Must see: nginx  (ACCEPTED=True)
+
   kubectl get gateway -n gateway
+  # Must see: ecommerce-gateway  (READY=True or PROGRAMMED=True)
+
   kubectl get httproute -A
-  # Should see: frontend-route, auth-route, product-route, order-route
+  # Must see: frontend-route, auth-route, product-route, order-route
+
+  kubectl get referencegrant -A
+  # Must see: allow-gateway-to-frontend (ns: frontend)
+  #           allow-gateway-to-backend  (ns: backend)
 
 ================================================================================
-PHASE 6 — MONGODB DEPLOYMENT (StatefulSets via Helm)
+PHASE 7 — UMBRELLA HELM CHART DEPLOYMENT
 ================================================================================
 
-STEP 13: Deploy auth-mongodb
+STEP 14: Bootstrap Helm dependencies (run ONCE after cloning)
 -------------------------------------------------------
-  helm install auth-mongodb ./helm-charts/mongodb \
-    --namespace database \
-    --set fullname=auth-mongodb \
-    --set auth.user=authuser \
-    --set auth.password=authpass \
-    --set auth.database=authdb \
-    --set ownerService=auth-service
+  cd helm-charts-repo/ecommerce-platform
+
+  helm dependency update
+  # This resolves all file://charts/<name> dependencies declared in Chart.yaml
+  # Expected output: 7 charts packaged into charts/*.tgz
+
+  cd ../..
 
 --------------------------------------------------------------------------------
 
-STEP 14: Deploy product-mongodb
+STEP 15: Deploy DEV configuration (umbrella chart)
 -------------------------------------------------------
-  helm install product-mongodb ./helm-charts/mongodb \
-    --namespace database \
-    --set fullname=product-mongodb \
-    --set auth.user=productuser \
-    --set auth.password=productpass \
-    --set auth.database=productdb \
-    --set ownerService=product-service
+  # Single command deploys ALL services + all 3 MongoDB instances
+  helm upgrade --install ecommerce-dev \
+    helm-charts-repo/ecommerce-platform \
+    -f helm-charts-repo/ecommerce-platform/values.yaml \
+    -f helm-charts-repo/ecommerce-platform/values-dev.yaml \
+    --create-namespace \
+    --atomic \
+    --timeout 5m
+
+  # --atomic: rolls back automatically if any resource fails
+  # Dev uses SHA-based image tags (sha-abc1234) and 1 replica per service
+
+  # Verify the release
+  helm list -A
+  # Must see: ecommerce-dev  DEPLOYED
 
 --------------------------------------------------------------------------------
 
-STEP 15: Deploy order-mongodb
+STEP 16: (Optional) Deploy PROD configuration
 -------------------------------------------------------
-  helm install order-mongodb ./helm-charts/mongodb \
-    --namespace database \
-    --set fullname=order-mongodb \
-    --set auth.user=orderuser \
-    --set auth.password=orderpass \
-    --set auth.database=orderdb \
-    --set ownerService=order-service
+  # Update image tags in values-prod.yaml to your actual built images first,
+  # then run:
+  helm upgrade --install ecommerce-prod \
+    helm-charts-repo/ecommerce-platform \
+    -f helm-charts-repo/ecommerce-platform/values.yaml \
+    -f helm-charts-repo/ecommerce-platform/values-prod.yaml \
+    --create-namespace \
+    --atomic \
+    --timeout 5m
+
+  # Prod uses semver image tags (v1.0.0) and 2 replicas per service
 
 --------------------------------------------------------------------------------
 
-STEP 16: Wait for all MongoDB pods to be Running
+STEP 17: Wait for all pods to be Running
 -------------------------------------------------------
-  kubectl get pods -n database -w
-  # Wait until all 3 show: Running  1/1
-
-  # Also verify PVCs are Bound
-  kubectl get pvc -n database
-  # auth-mongodb-pvc    Bound   auth-mongodb-pv    5Gi
-  # product-mongodb-pvc Bound   product-mongodb-pv 5Gi
-  # order-mongodb-pvc   Bound   order-mongodb-pv   5Gi
-
-  # Verify headless services exist
-  kubectl get svc -n database
-  # auth-mongodb-headless, product-mongodb-headless, order-mongodb-headless
-
-================================================================================
-PHASE 7 — MICROSERVICES DEPLOYMENT (via Helm)
-================================================================================
-
-STEP 17: Deploy auth-service
--------------------------------------------------------
-  helm install auth-service ./helm-charts/auth-chart --namespace backend
-
-  # Verify
-  kubectl get pods -n backend -l app=auth-service
-  kubectl get svc -n backend -l app=auth-service
-
---------------------------------------------------------------------------------
-
-STEP 18: Deploy product-service
--------------------------------------------------------
-  helm install product-service ./helm-charts/product-chart --namespace backend
-
-  # Verify
-  kubectl get pods -n backend -l app=product-service
-
---------------------------------------------------------------------------------
-
-STEP 19: Deploy order-service
--------------------------------------------------------
-  helm install order-service ./helm-charts/order-chart --namespace backend
-
-  # Verify
-  kubectl get pods -n backend -l app=order-service
-
---------------------------------------------------------------------------------
-
-STEP 20: Deploy frontend
--------------------------------------------------------
-  helm install frontend ./helm-charts/frontend-chart --namespace frontend
-
-  # Verify
-  kubectl get pods -n frontend -l app=frontend
-
---------------------------------------------------------------------------------
-
-STEP 21: Wait for all service pods to be Running
--------------------------------------------------------
-  kubectl get pods -n backend -w
+  # Watch all namespaces until pods stabilise
   kubectl get pods -n frontend -w
-  # All pods must show: Running  2/2  (readiness + liveness passing)
+  kubectl get pods -n backend  -w
+  kubectl get pods -n database -w
+
+  # Or check all at once (non-watch):
+  kubectl get pods -A
+
+  # Expected state:
+  #   frontend/frontend-*          Running  1/1 (dev) or 2/2 (prod)
+  #   backend/auth-service-*       Running  1/1 (dev) or 2/2 (prod)
+  #   backend/product-service-*    Running  1/1 (dev) or 2/2 (prod)
+  #   backend/order-service-*      Running  1/1 (dev) or 2/2 (prod)
+  #   database/mongodb-auth-0      Running  1/1
+  #   database/mongodb-product-0   Running  1/1
+  #   database/mongodb-order-0     Running  1/1
+
+--------------------------------------------------------------------------------
+
+STEP 18: Verify PVCs are Bound to PVs
+-------------------------------------------------------
+  kubectl get pvc -n database
+  # Expected:
+  #   NAME                  STATUS   VOLUME              CAPACITY
+  #   mongodb-auth-pvc      Bound    mongodb-auth-pv     5Gi (dev) / 20Gi (prod)
+  #   mongodb-product-pvc   Bound    mongodb-product-pv  5Gi (dev) / 20Gi (prod)
+  #   mongodb-order-pvc     Bound    mongodb-order-pv    5Gi (dev) / 20Gi (prod)
+
+  # If STATUS=Pending, verify NFS IP and that NFS client is installed on nodes.
 
 ================================================================================
 PHASE 8 — ARGOCD SETUP (GitOps)
 ================================================================================
 
-STEP 22: Install ArgoCD
+STEP 19: Install ArgoCD
 -------------------------------------------------------
   kubectl create namespace argocd
 
   kubectl apply -n argocd \
     -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
-  # Wait for ArgoCD to be fully ready
-  kubectl wait --for=condition=available deployment/argocd-server \
-    -n argocd --timeout=300s
+  # Wait for ArgoCD server to be ready
+  kubectl rollout status deployment/argocd-server -n argocd --timeout=300s
 
   kubectl get pods -n argocd
-  # All pods should be Running
+  # All pods must be Running
 
 --------------------------------------------------------------------------------
 
-STEP 23: Get ArgoCD admin password
+STEP 20: Get ArgoCD admin password
 -------------------------------------------------------
+  # Linux/Mac:
   kubectl -n argocd get secret argocd-initial-admin-secret \
-    -o jsonpath="{.data.password}" | base64 -d
-  echo ""
-  # Copy this password — you need it to log in
+    -o jsonpath="{.data.password}" | base64 -d && echo
+
+  # Windows PowerShell:
+  $pw = kubectl -n argocd get secret argocd-initial-admin-secret `
+    -o jsonpath="{.data.password}"
+  [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($pw))
+
+  # Save this password — used to log into ArgoCD UI
 
 --------------------------------------------------------------------------------
 
-STEP 24: Access ArgoCD UI
+STEP 21: Access ArgoCD UI
 -------------------------------------------------------
-  # Option A: Port forward (simplest)
+  # Port-forward (simplest, no LoadBalancer needed):
   kubectl port-forward svc/argocd-server -n argocd 8080:443
 
   # Open browser: https://localhost:8080
   # Username: admin
-  # Password: (from Step 23)
+  # Password: (from Step 20)
 
-  # Option B: LoadBalancer (if your cluster supports it)
-  kubectl patch svc argocd-server -n argocd \
-    -p '{"spec": {"type": "LoadBalancer"}}'
+  # Alternative — expose as LoadBalancer:
+  kubectl patch svc argocd-server -n argocd -p '{"spec":{"type":"LoadBalancer"}}'
   kubectl get svc argocd-server -n argocd
-  # Use EXTERNAL-IP to access
+  # Use EXTERNAL-IP to access ArgoCD
 
 --------------------------------------------------------------------------------
 
-STEP 25: Apply ArgoCD Applications
+STEP 22: Update ArgoCD manifests with your repo URL
 -------------------------------------------------------
-  kubectl apply -f gitops/argocd-applications.yaml
+  # Open helm-charts-repo/gitops/argocd/appproject.yaml
+  # Change: https://github.com/myorg/helm-charts-repo
+  # To:     https://github.com/priyatham7753/tempo2
 
-  # This creates:
-  #   AppProject: shopmesh
-  #   7 Applications: frontend, auth, product, order + 3 MongoDB instances
+  # Do the same in:
+  #   helm-charts-repo/gitops/environments/dev/application.yaml
+  #   helm-charts-repo/gitops/environments/prod/application.yaml
+
+  # Linux/Mac (all 3 files at once):
+  find helm-charts-repo/gitops -name "*.yaml" -exec \
+    sed -i 's|myorg/helm-charts-repo|priyatham7753/tempo2|g' {} \;
+
+  # Windows PowerShell:
+  Get-ChildItem -Path helm-charts-repo\gitops -Filter "*.yaml" -Recurse | ForEach-Object {
+    (Get-Content $_.FullName) -replace 'myorg/helm-charts-repo','priyatham7753/tempo2' |
+    Set-Content $_.FullName
+  }
+
+--------------------------------------------------------------------------------
+
+STEP 23: Apply ArgoCD AppProject and Applications
+-------------------------------------------------------
+  # 1. Create the AppProject first
+  kubectl apply -f helm-charts-repo/gitops/argocd/appproject.yaml
+
+  # 2. Apply dev Application (uses values-dev.yaml — SHA image tags, 1 replica)
+  kubectl apply -f helm-charts-repo/gitops/environments/dev/application.yaml
+
+  # 3. Apply prod Application (uses values-prod.yaml — semver tags, 2 replicas)
+  kubectl apply -f helm-charts-repo/gitops/environments/prod/application.yaml
 
   # Watch sync status
   kubectl get applications -n argocd
-  # All apps should show: Synced  Healthy
+  # Both ecommerce-dev and ecommerce-prod must show: Synced  Healthy
 
 --------------------------------------------------------------------------------
 
-STEP 26: Force sync if any app shows OutOfSync
+STEP 24: Force sync if any app shows OutOfSync
 -------------------------------------------------------
-  kubectl -n argocd patch application shopmesh-auth \
-    --type merge -p '{"operation":{"initiatedBy":{"username":"admin"},"sync":{"revision":"HEAD"}}}'
+  # Install ArgoCD CLI (optional but helpful):
+  # Linux:
+  curl -sSL https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64 \
+    -o /usr/local/bin/argocd && chmod +x /usr/local/bin/argocd
 
-  # Or use ArgoCD CLI (install from: https://argo-cd.readthedocs.io/en/stable/cli_installation/)
+  # Log in:
   argocd login localhost:8080 --username admin --password <YOUR_PASSWORD> --insecure
-  argocd app sync shopmesh-auth
-  argocd app sync shopmesh-product
-  argocd app sync shopmesh-order
-  argocd app sync shopmesh-frontend
+
+  # Sync dev:
+  argocd app sync ecommerce-dev
+
+  # Sync prod:
+  argocd app sync ecommerce-prod
+
+  # Or force sync via kubectl:
+  kubectl -n argocd patch application ecommerce-dev \
+    --type merge \
+    -p '{"operation":{"initiatedBy":{"username":"admin"},"sync":{"revision":"HEAD"}}}'
 
 ================================================================================
 PHASE 9 — VERIFICATION
 ================================================================================
 
-STEP 27: Check all pods are healthy
+STEP 25: Check all pods are healthy
 -------------------------------------------------------
   kubectl get pods -A
-  # Every pod should show: Running  (no CrashLoopBackOff, no Pending)
+  # No pod should show CrashLoopBackOff or Pending
+
+  # Check each namespace individually:
+  kubectl get pods -n frontend
+  kubectl get pods -n backend
+  kubectl get pods -n database
+  kubectl get pods -n gateway
 
 --------------------------------------------------------------------------------
 
-STEP 28: Get the Gateway external IP
+STEP 26: Get the Gateway external IP
 -------------------------------------------------------
   kubectl get svc -n gateway
-  # Copy the EXTERNAL-IP from the kgateway proxy service
-  # This is your application's public URL: http://EXTERNAL-IP
+  # Find the NGINX Gateway Fabric service
+  # Copy its EXTERNAL-IP
 
---------------------------------------------------------------------------------
-
-STEP 29: Test each endpoint
--------------------------------------------------------
-  # Set gateway IP variable
+  # Set as variable for testing:
+  # Linux/Mac:
   GATEWAY_IP=$(kubectl get svc -n gateway \
-    -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}')
-
+    -o jsonpath='{.items[?(@.spec.type=="LoadBalancer")].status.loadBalancer.ingress[0].ip}')
   echo "Gateway IP: $GATEWAY_IP"
 
-  # Test frontend (should return HTML)
+  # Windows PowerShell:
+  $GATEWAY_IP = kubectl get svc -n gateway `
+    -o jsonpath='{.items[?(@.spec.type=="LoadBalancer")].status.loadBalancer.ingress[0].ip}'
+  Write-Host "Gateway IP: $GATEWAY_IP"
+
+--------------------------------------------------------------------------------
+
+STEP 27: Test all routes
+-------------------------------------------------------
+  # Frontend (should return HTML)
   curl http://$GATEWAY_IP/
 
-  # Test auth service health
+  # Auth service health check
   curl http://$GATEWAY_IP/api/auth/health
 
-  # Test product service health
+  # Product service (should return JSON product list)
   curl http://$GATEWAY_IP/api/products
 
-  # Test order service health
+  # Order service
   curl http://$GATEWAY_IP/api/orders
 
-  # All should return JSON responses (not 502/404)
+  # All should return 200 responses — NOT 502/404
 
 --------------------------------------------------------------------------------
 
-STEP 30: Verify MongoDB connectivity from services
+STEP 28: Verify MongoDB connectivity from services
 -------------------------------------------------------
-  # Check auth-service logs for MongoDB connection
-  kubectl logs -n backend -l app=auth-service --tail=20
-
-  # Check product-service logs
+  # Check for successful DB connection in logs
+  kubectl logs -n backend -l app=auth-service    --tail=20
   kubectl logs -n backend -l app=product-service --tail=20
+  kubectl logs -n backend -l app=order-service   --tail=20
 
-  # Check order-service logs
-  kubectl logs -n backend -l app=order-service --tail=20
+  # Look for: "Connected to MongoDB" or similar success message
+  # If you see ECONNREFUSED — check the MONGO_URI in the service's Secret
 
-  # Look for: "Connected to MongoDB" or "Database connected"
-
-================================================================================
-PHASE 10 — GITHUB ACTIONS CI/CD SETUP
-================================================================================
-
-STEP 31: Add GitHub Secrets to your repository
--------------------------------------------------------
-  Go to: https://github.com/priyatham7753/tempo2/settings/secrets/actions
-  Click "New repository secret" for each:
-
-  Name                  Value
-  ----                  -----
-  SONAR_TOKEN           (from your SonarQube instance)
-  SONAR_HOST_URL        https://your-sonarqube-server.com
-  SNYK_TOKEN            (from https://app.snyk.io/account)
-  HELM_CHARTS_TOKEN     (GitHub PAT with repo write scope)
-  SLACK_WEBHOOK_URL     (from your Slack app settings)
-
-  NOTE: GITHUB_TOKEN is automatic — no setup needed
+  # Inspect a Secret (example for auth-service):
+  kubectl get secret auth-secret -n backend -o yaml
+  # Decode the MONGO_URI:
+  # Linux: echo "BASE64VALUE" | base64 -d
+  # PowerShell: [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("BASE64VALUE"))
 
 --------------------------------------------------------------------------------
 
-STEP 32: Trigger first CI run
+STEP 29: Verify NetworkPolicies are enforced
 -------------------------------------------------------
-  # Make any small change and push to main to trigger CI
-  git add .
-  git commit -m "trigger: first CI run"
-  git push origin main
-
-  # Watch the Actions tab:
-  # https://github.com/priyatham7753/tempo2/actions
+  kubectl get networkpolicy -A
+  # Expected policies per namespace:
+  #   frontend:  default-deny-frontend, frontend-allow-gateway-ingress, frontend-allow-backend-egress
+  #   backend:   default-deny-backend, auth-service-allow-ingress, auth-service-allow-db-egress,
+  #              product-service-allow-ingress, product-service-allow-db-egress,
+  #              order-service-allow-ingress, order-service-allow-egress
+  #   database:  mongodb-auth-netpol, mongodb-product-netpol, mongodb-order-netpol
 
 ================================================================================
-PHASE 11 — QUICK REFERENCE COMMANDS
+PHASE 10 — QUICK REFERENCE COMMANDS
 ================================================================================
 
-  # See all resources
+  # List all resources across all namespaces
   kubectl get all -A
 
-  # See all Helm releases
+  # List all Helm releases
   helm list -A
 
-  # Restart a deployment
+  # Show values used by a release
+  helm get values ecommerce-dev
+
+  # Upgrade dev release with new values (manual, ArgoCD normally does this)
+  helm upgrade ecommerce-dev helm-charts-repo/ecommerce-platform \
+    -f helm-charts-repo/ecommerce-platform/values.yaml \
+    -f helm-charts-repo/ecommerce-platform/values-dev.yaml
+
+  # Rollback a release to previous version
+  helm rollback ecommerce-dev 1
+
+  # Restart a specific deployment (e.g. auth-service in backend)
   kubectl rollout restart deployment/auth-service -n backend
 
-  # Check a specific pod's logs
-  kubectl logs -n backend <pod-name> -f
+  # Stream logs from a service
+  kubectl logs -n backend -l app=auth-service -f
 
   # Describe a failing pod
   kubectl describe pod <pod-name> -n backend
@@ -479,49 +539,71 @@ PHASE 11 — QUICK REFERENCE COMMANDS
   # Open a shell inside a pod
   kubectl exec -it <pod-name> -n backend -- /bin/sh
 
-  # Check network policies
-  kubectl get networkpolicy -A
-
-  # Delete a Helm release and redeploy
-  helm uninstall auth-service -n backend
-  helm install auth-service ./helm-charts/auth-chart --namespace backend
-
-  # Check ArgoCD app status
+  # Check ArgoCD application status
   kubectl get applications -n argocd
 
+  # Full uninstall and redeploy (dev)
+  helm uninstall ecommerce-dev
+  helm upgrade --install ecommerce-dev helm-charts-repo/ecommerce-platform \
+    -f helm-charts-repo/ecommerce-platform/values.yaml \
+    -f helm-charts-repo/ecommerce-platform/values-dev.yaml \
+    --create-namespace --atomic --timeout 5m
+
 ================================================================================
-TROUBLESHOOTING QUICK FIXES
+TROUBLESHOOTING
 ================================================================================
+
+  PROBLEM: helm dependency update fails
+  FIX:     Make sure you are inside helm-charts-repo/ecommerce-platform/
+           Check charts/ directory has all 7 subdirectories:
+           ls helm-charts-repo/ecommerce-platform/charts/
+           Must see: frontend, auth-service, product-service, order-service,
+                     mongodb-auth, mongodb-product, mongodb-order
 
   PROBLEM: Pod stuck in Pending
-  FIX:     kubectl describe pod <pod> -n <ns>
-           Check "Events" section — usually PVC not bound or insufficient resources
+  FIX:     kubectl describe pod <pod> -n <namespace>
+           Check "Events" section
+           Likely cause: PVC not Bound (fix NFS IP) or node resource limits
 
   PROBLEM: PVC stuck in Pending
-  FIX:     kubectl describe pvc <pvc> -n database
-           Verify NFS IP is correct in k8s/01-nfs-storage.yaml
+  FIX:     kubectl describe pvc <pvc-name> -n database
+           Verify NFS IP in k8s/01-nfs-storage.yaml is correct
            Verify NFS exports: showmount -e YOUR_NFS_IP
+           Verify nfs-common is installed on all worker nodes
 
   PROBLEM: Pod in CrashLoopBackOff
   FIX:     kubectl logs <pod> -n <ns> --previous
-           Check MONGO_URI secret is correct
-           Check service can reach MongoDB
+           Check MONGO_URI in the service Secret is correct
+           Ensure MongoDB pod in 'database' namespace is Running first
 
-  PROBLEM: 502 Bad Gateway
-  FIX:     kubectl get pods -n backend
-           Backend service pod must be Running before kgateway can route to it
-           Check kgateway proxy logs: kubectl logs -n gateway -l app=kgateway --tail=30
+  PROBLEM: 502 Bad Gateway from Gateway IP
+  FIX:     kubectl get pods -n backend  (service pod must be Running)
+           kubectl get httproute -A     (routes must show Accepted=True)
+           kubectl logs -n gateway -l app.kubernetes.io/name=nginx-gateway -f
 
-  PROBLEM: MongoDB auth failed
-  FIX:     Check Secret values:
-           kubectl get secret auth-secret -n backend -o yaml
-           Decode: echo "base64value" | base64 -d
+  PROBLEM: HTTPRoute shows "No matching parent" error
+  FIX:     Verify Gateway name in HTTPRoute parentRefs matches:
+           kubectl get gateway -n gateway
+           Name must be: ecommerce-gateway
 
-  PROBLEM: ArgoCD shows OutOfSync
-  FIX:     argocd app sync <app-name>
-           Check the git repo URL in gitops/argocd-applications.yaml matches your repo
+  PROBLEM: ReferenceGrant missing — cross-namespace routing fails
+  FIX:     kubectl get referencegrant -A
+           If missing, re-apply: kubectl apply -f k8s/02-gateway-api.yaml
+           Both allow-gateway-to-frontend and allow-gateway-to-backend must exist
+
+  PROBLEM: MongoDB auth failed (ECONNREFUSED or AuthenticationFailed)
+  FIX:     kubectl get secret mongodb-auth-secret -n database -o yaml
+           Decode MONGO_ROOT_PASSWORD — must match what's in auth-service's MONGO_URI
+           Both come from global.mongodb.password in values.yaml
+
+  PROBLEM: ArgoCD shows OutOfSync forever
+  FIX:     Check repoURL in application.yaml matches your actual GitHub repo URL
+           argocd app diff ecommerce-dev   (shows what's different)
+           argocd app sync ecommerce-dev --force
 
 ================================================================================
   END OF DEPLOYMENT GUIDE
-  Repository: https://github.com/priyatham7753/tempo2
+  Repo: https://github.com/priyatham7753/tempo2
+  Umbrella chart: helm-charts-repo/ecommerce-platform/
+  Namespaces: frontend | backend | database | gateway
 ================================================================================

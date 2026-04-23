@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth-config
+  namespace: {{ .Values.global.namespaces.backend }}
+  labels:
+    app: auth-service
+    environment: {{ .Values.global.environment }}
+data:
+  PORT:          {{ .Values.env.PORT | quote }}
+  NODE_ENV:      {{ .Values.env.NODE_ENV | quote }}
+  MONGO_DB_NAME: {{ .Values.env.MONGO_DB_NAME | quote }}
