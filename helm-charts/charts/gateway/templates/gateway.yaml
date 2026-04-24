@@ -28,5 +28,5 @@ spec:
       # Allow HTTPRoute resources from the same namespace to attach
       allowedRoutes:
         namespaces:
-          from: Same
+          from: All
 {{- end }}

@@ -32,34 +32,52 @@ spec:
     - name: shopmesh-gateway
       namespace: {{ $global.namespace }}
   rules:
-    # ── /auth → auth-service:3001 ──────────────────────────────────────────────
+    # ── /auth → auth-service:3001 ──────────────────────────────
     - matches:
         - path:
             type: PathPrefix
             value: /auth
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /api/auth
       backendRefs:
         - name: auth-service
           port: 3001
 
-    # ── /products → product-service:3002 ──────────────────────────────────────
+    # ── /products → product-service:3002 ──────────────────────
     - matches:
         - path:
             type: PathPrefix
             value: /products
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /api/products
       backendRefs:
         - name: product-service
           port: 3002
 
-    # ── /orders → order-service:3003 ──────────────────────────────────────────
+    # ── /orders → order-service:3003 ──────────────────────────
     - matches:
         - path:
             type: PathPrefix
             value: /orders
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /api/orders
       backendRefs:
         - name: order-service
           port: 3003
 
-    # ── / → frontend:80 (catch-all, must be last) ─────────────────────────────
+    # ── / → frontend:80 ─────────────────────────────
     - matches:
         - path:
             type: PathPrefix

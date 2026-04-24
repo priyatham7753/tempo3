@@ -2,13 +2,13 @@ import axios from 'axios';
 
 // Use environment variables (fallback to ingress paths)
 const AUTH_URL =
-  process.env.REACT_APP_AUTH_SERVICE_URL || "/api/auth";
+  process.env.REACT_APP_AUTH_SERVICE_URL || "/auth";
 
 const PRODUCT_URL =
-  process.env.REACT_APP_PRODUCT_SERVICE_URL || "/api/products";
+  process.env.REACT_APP_PRODUCT_SERVICE_URL || "/products";
 
 const ORDER_URL =
-  process.env.REACT_APP_ORDER_SERVICE_URL || "/api/orders";
+  process.env.REACT_APP_ORDER_SERVICE_URL || "/orders";
 
 // Helper: get auth headers
 const authHeader = () => {
