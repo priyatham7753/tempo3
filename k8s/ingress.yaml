@@ -1,51 +1,17 @@
-# ──────────────────────────────────────────────────────────────────────────────
-# ingress.yaml  — Nginx Ingress Controller routes for ShopMesh
-#
-# Prerequisites:
-#   kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.1/deploy/static/provider/cloud/deploy.yaml
-#
-# For Minikube:
-#   minikube addons enable ingress
-#
-# Replace "shopmesh.example.com" with your actual domain or use
-# the Minikube IP: $(minikube ip)
-#
-# Apply: kubectl apply -f k8s/ingress.yaml
-# ──────────────────────────────────────────────────────────────────────────────
-
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: shopmesh-ingress
   namespace: shopmesh
-  labels:
-    app.kubernetes.io/name: shopmesh-ingress
-    app.kubernetes.io/part-of: shopmesh
-    app.kubernetes.io/component: ingress
   annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
-    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
-    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
-    # Uncomment to enable TLS/HTTPS via cert-manager
-    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+
 spec:
   ingressClassName: nginx
   rules:
-    - host: shopmesh.example.com   # ← Replace with your domain or Minikube IP
-      http:
+    - http:
         paths:
-          # ── Frontend (catch-all) ─────────────────────────────────────────
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: frontend
-                port:
-                  number: 80
 
-          # ── Auth API ─────────────────────────────────────────────────────
           - path: /api/auth
             pathType: Prefix
             backend:
@@ -54,7 +20,6 @@ spec:
                 port:
                   number: 3001
 
-          # ── Products API ─────────────────────────────────────────────────
           - path: /api/products
             pathType: Prefix
             backend:
@@ -63,7 +28,6 @@ spec:
                 port:
                   number: 3002
 
-          # ── Orders API ───────────────────────────────────────────────────
           - path: /api/orders
             pathType: Prefix
             backend:
@@ -72,8 +36,10 @@ spec:
                 port:
                   number: 3003
 
-  # ── TLS (uncomment when you have a valid certificate) ──────────────────────
-  # tls:
-  #   - hosts:
-  #       - shopmesh.example.com
-  #     secretName: shopmesh-tls-secret
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

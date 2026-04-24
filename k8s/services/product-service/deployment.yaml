@@ -1,7 +1,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # services/product-service/deployment.yaml  — Product Service Deployment
 #
-# Image   : your-registry/product-service:latest
+# Image   : priyatham753/product-service:latest
 # Port    : 3002
 # Health  : GET /health
 #
@@ -43,7 +43,7 @@ spec:
 
       containers:
         - name: product-service
-          image: your-registry/product-service:latest   # ← Replace with your image
+          image: priyatham753/product-service:latest   # ← Replace with your image
           imagePullPolicy: Always
           ports:
             - name: http

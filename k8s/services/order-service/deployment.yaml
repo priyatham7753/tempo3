@@ -1,7 +1,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # services/order-service/deployment.yaml  — Order Service Deployment
 #
-# Image   : your-registry/order-service:latest
+# Image   : priyatham753/order-service:latest
 # Port    : 3003
 # Health  : GET /health
 #
@@ -43,7 +43,7 @@ spec:
 
       containers:
         - name: order-service
-          image: your-registry/order-service:latest   # ← Replace with your image
+          image: priyatham753/order-service:latest   # ← Replace with your image
           imagePullPolicy: Always
           ports:
             - name: http

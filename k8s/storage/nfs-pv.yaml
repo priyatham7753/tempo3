@@ -37,7 +37,7 @@ spec:
   persistentVolumeReclaimPolicy: Retain
   storageClassName: nfs-storage
   nfs:
-    server: 10.0.0.10          # ← Replace with your NFS server IP
+    server: 172.31.24.10          # ← Replace with your NFS server IP
     path: /exports/mongodb     # ← Replace with your NFS export path
   mountOptions:
     - hard

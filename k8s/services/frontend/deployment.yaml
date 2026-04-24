@@ -1,7 +1,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # services/frontend/deployment.yaml  — Frontend (React + Nginx) Deployment
 #
-# Image   : your-registry/frontend:latest
+# Image   : priyatham753/frontend:latest
 # Port    : 80 (served by Nginx)
 # Health  : GET /
 #
@@ -41,7 +41,7 @@ spec:
 
       containers:
         - name: frontend
-          image: your-registry/frontend:latest   # ← Replace with your image
+          image: priyatham753/frontend:latest   # ← Replace with your image
           imagePullPolicy: Always
           ports:
             - name: http

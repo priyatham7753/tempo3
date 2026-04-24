@@ -12,10 +12,15 @@ metadata:
     app.kubernetes.io/name: frontend
     app.kubernetes.io/part-of: shopmesh
     app.kubernetes.io/component: frontend
-data:
+      #data:
   # These are typically baked into the React build via build-args.
   # Exposed here for nginx runtime config / server-side injection if needed.
-  REACT_APP_AUTH_SERVICE_URL: "http://shopmesh.example.com/api/auth"
-  REACT_APP_PRODUCT_SERVICE_URL: "http://shopmesh.example.com/api/products"
-  REACT_APP_ORDER_SERVICE_URL: "http://shopmesh.example.com/api/orders"
+  #REACT_APP_AUTH_SERVICE_URL: "http://shopmesh.example.com/api/auth"
+  #REACT_APP_PRODUCT_SERVICE_URL: "http://shopmesh.example.com/api/products"
+    #REACT_APP_ORDER_SERVICE_URL: "http://shopmesh.example.com/api/orders"
+    #NGINX_PORT: "80
+data:
+  REACT_APP_AUTH_SERVICE_URL: "/api/auth"
+  REACT_APP_PRODUCT_SERVICE_URL: "/api/products"
+  REACT_APP_ORDER_SERVICE_URL: "/api/orders"
   NGINX_PORT: "80"

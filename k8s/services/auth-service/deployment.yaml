@@ -1,7 +1,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # services/auth-service/deployment.yaml  — Auth Service Deployment
 #
-# Image   : your-registry/auth-service:latest
+# Image   : priyatham753/auth-service:latest
 #           Replace with your actual container registry image.
 # Port    : 3001
 # Health  : GET /health
@@ -45,7 +45,7 @@ spec:
 
       containers:
         - name: auth-service
-          image: your-registry/auth-service:latest   # ← Replace with your image
+          image: priyatham753/auth-service:latest   # ← Replace with your image
           imagePullPolicy: Always
           ports:
             - name: http
