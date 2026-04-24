@@ -1,0 +1,24 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# storage/pvc.yaml  — PersistentVolumeClaim for MongoDB StatefulSet
+# Apply: kubectl apply -f k8s/storage/pvc.yaml
+# ──────────────────────────────────────────────────────────────────────────────
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongodb-pvc
+  namespace: shopmesh
+  labels:
+    app.kubernetes.io/name: mongodb
+    app.kubernetes.io/part-of: shopmesh
+    app.kubernetes.io/component: storage
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs-storage
+  resources:
+    requests:
+      storage: 10Gi
+  selector:
+    matchLabels:
+      pv-name: mongodb-pv

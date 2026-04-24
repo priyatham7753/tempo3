@@ -1,4 +1,0 @@
-# Production overrides for frontend
-replicaCount: 2
-image:
-  tag: "latest"

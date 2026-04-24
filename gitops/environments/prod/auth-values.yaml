@@ -1,7 +1,0 @@
-# Production overrides for auth-service
-replicaCount: 2
-image:
-  tag: "latest"
-secrets:
-  mongoUri: "mongodb://authuser:authpass@auth-mongodb-0.auth-mongodb-headless.database.svc.cluster.local:27017/authdb"
-  jwtSecret: "CHANGE_ME_JWT_SECRET_MIN_32_CHARS_LONG"

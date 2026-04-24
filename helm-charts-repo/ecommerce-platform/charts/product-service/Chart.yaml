@@ -1,6 +1,0 @@
-apiVersion: v2
-name: product-service
-description: Node.js Product Service subchart — namespace: backend
-type: application
-version: 1.0.0
-appVersion: "1.0.0"

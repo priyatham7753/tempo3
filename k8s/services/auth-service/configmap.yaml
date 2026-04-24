@@ -1,0 +1,22 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# services/auth-service/configmap.yaml  — Non-sensitive configuration
+# Apply: kubectl apply -f k8s/services/auth-service/configmap.yaml
+# ──────────────────────────────────────────────────────────────────────────────
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth-service-config
+  namespace: shopmesh
+  labels:
+    app.kubernetes.io/name: auth-service
+    app.kubernetes.io/part-of: shopmesh
+    app.kubernetes.io/component: backend
+data:
+  PORT: "3001"
+  NODE_ENV: "production"
+  JWT_EXPIRES_IN: "24h"
+  # MongoDB host uses the headless service DNS for the pod
+  MONGO_HOST: "mongodb-0.mongodb-headless.shopmesh.svc.cluster.local"
+  MONGO_PORT: "27017"
+  MONGO_DB: "authdb"

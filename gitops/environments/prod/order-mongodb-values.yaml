@@ -1,8 +1,0 @@
-# Production overrides for order-mongodb
-fullname: order-mongodb
-auth:
-  user: orderuser
-  password: orderpass
-  database: orderdb
-storage:
-  size: 5Gi

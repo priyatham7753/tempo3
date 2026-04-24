@@ -1,8 +1,0 @@
-# Production overrides for product-mongodb
-fullname: product-mongodb
-auth:
-  user: productuser
-  password: productpass
-  database: productdb
-storage:
-  size: 5Gi

@@ -1,0 +1,24 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# services/frontend/service.yaml  — ClusterIP Service for Frontend
+# Internal DNS: frontend.shopmesh.svc.cluster.local:80
+# Apply: kubectl apply -f k8s/services/frontend/service.yaml
+# ──────────────────────────────────────────────────────────────────────────────
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: shopmesh
+  labels:
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/part-of: shopmesh
+    app.kubernetes.io/component: frontend
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: frontend
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 80

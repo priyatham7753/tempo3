@@ -1,6 +1,0 @@
-apiVersion: v2
-name: mongodb-order
-description: Dedicated MongoDB for order-service — namespace: database
-type: application
-version: 1.0.0
-appVersion: "7.0"

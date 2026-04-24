@@ -1,0 +1,23 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# network/default-deny.yaml  — Global Default Deny-All Network Policy
+#
+# Applies a deny-all policy for both Ingress and Egress to ALL pods in the
+# shopmesh namespace. Service-specific NetworkPolicies then explicitly
+# whitelist only the traffic each pod requires.
+#
+# Apply: kubectl apply -f k8s/network/default-deny.yaml
+# ──────────────────────────────────────────────────────────────────────────────
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: shopmesh
+  labels:
+    app.kubernetes.io/part-of: shopmesh
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector: {}       # Applies to ALL pods in the namespace
+  policyTypes:
+    - Ingress
+    - Egress

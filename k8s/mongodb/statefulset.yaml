@@ -1,0 +1,113 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# mongodb/statefulset.yaml  — MongoDB StatefulSet with NFS-backed persistence
+#
+# Image   : mongo:7.0
+# Replicas: 1 (single-node; scale up for replica sets)
+# Storage : PVC bound to the NFS PersistentVolume via volumeClaimTemplates
+#
+# Apply: kubectl apply -f k8s/mongodb/statefulset.yaml
+# ──────────────────────────────────────────────────────────────────────────────
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongodb
+  namespace: shopmesh
+  labels:
+    app.kubernetes.io/name: mongodb
+    app.kubernetes.io/part-of: shopmesh
+    app.kubernetes.io/component: database
+    app.kubernetes.io/version: "7.0"
+spec:
+  serviceName: mongodb-headless     # must match the headless Service name
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mongodb
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mongodb
+        app.kubernetes.io/part-of: shopmesh
+        app.kubernetes.io/component: database
+    spec:
+      # ── Security Context ─────────────────────────────────────────────────────
+      securityContext:
+        fsGroup: 999          # mongodb group in the official image
+        runAsNonRoot: false   # mongo image needs root during init; handled internally
+      terminationGracePeriodSeconds: 30
+
+      containers:
+        - name: mongodb
+          image: mongo:7.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: mongodb
+              containerPort: 27017
+              protocol: TCP
+
+          # ── Credentials from Secret ───────────────────────────────────────────
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: mongodb-secret
+                  key: MONGO_ROOT_USERNAME
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mongodb-secret
+                  key: MONGO_ROOT_PASSWORD
+
+          # ── Resource Requests & Limits ────────────────────────────────────────
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+
+          # ── Volume Mount ──────────────────────────────────────────────────────
+          volumeMounts:
+            - name: mongodb-data
+              mountPath: /data/db
+
+          # ── Liveness Probe ────────────────────────────────────────────────────
+          livenessProbe:
+            exec:
+              command:
+                - mongosh
+                - --eval
+                - "db.adminCommand('ping')"
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 10
+            failureThreshold: 3
+
+          # ── Readiness Probe ───────────────────────────────────────────────────
+          readinessProbe:
+            exec:
+              command:
+                - mongosh
+                - --eval
+                - "db.adminCommand('ping')"
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+  # ── Volume Claim Template (NFS-backed) ───────────────────────────────────────
+  volumeClaimTemplates:
+    - metadata:
+        name: mongodb-data
+        labels:
+          app.kubernetes.io/name: mongodb
+          app.kubernetes.io/part-of: shopmesh
+      spec:
+        accessModes:
+          - ReadWriteMany
+        storageClassName: nfs-storage
+        resources:
+          requests:
+            storage: 10Gi

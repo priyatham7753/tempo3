@@ -1,7 +1,0 @@
-# Production overrides for product-service
-replicaCount: 2
-image:
-  tag: "latest"
-secrets:
-  mongoUri: "mongodb://productuser:productpass@product-mongodb-0.product-mongodb-headless.database.svc.cluster.local:27017/productdb"
-  jwtSecret: "CHANGE_ME_JWT_SECRET_MIN_32_CHARS_LONG"

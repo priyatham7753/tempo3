@@ -1,0 +1,70 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# services/frontend/networkpolicy.yaml  — Frontend Network Policy
+#
+# Rules:
+#   INGRESS  ← ingress-nginx controller (port 80)
+#   EGRESS   → auth-service (port 3001)
+#            → product-service (port 3002)
+#            → order-service (port 3003)
+#            → kube-dns (port 53)
+#
+# Apply: kubectl apply -f k8s/services/frontend/networkpolicy.yaml
+# ──────────────────────────────────────────────────────────────────────────────
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend-netpol
+  namespace: shopmesh
+  labels:
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/part-of: shopmesh
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: frontend
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    # ── Allow ingress-nginx controller → frontend ─────────────────────────────
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: 80
+          protocol: TCP
+
+  egress:
+    # ── Allow frontend → auth-service ─────────────────────────────────────────
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: auth-service
+      ports:
+        - port: 3001
+          protocol: TCP
+    # ── Allow frontend → product-service ─────────────────────────────────────
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: product-service
+      ports:
+        - port: 3002
+          protocol: TCP
+    # ── Allow frontend → order-service ───────────────────────────────────────
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: order-service
+      ports:
+        - port: 3003
+          protocol: TCP
+    # ── Allow DNS ────────────────────────────────────────────────────────────
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

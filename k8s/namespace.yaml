@@ -1,0 +1,12 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# namespace.yaml  — Platform namespaces for ShopMesh
+# Apply: kubectl apply -f k8s/namespace.yaml
+# ──────────────────────────────────────────────────────────────────────────────
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shopmesh
+  labels:
+    app.kubernetes.io/part-of: shopmesh
+    kubernetes.io/metadata.name: shopmesh

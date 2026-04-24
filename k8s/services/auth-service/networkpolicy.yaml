@@ -1,0 +1,79 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# services/auth-service/networkpolicy.yaml  — Auth Service Network Policy
+#
+# Rules:
+#   INGRESS  ← frontend pods (port 3001)
+#            ← product-service pods (port 3001)  [token validation]
+#            ← order-service pods (port 3001)    [token validation]
+#            ← ingress-nginx controller pods
+#   EGRESS   → mongodb-headless (port 27017)
+#            → kube-dns (port 53 UDP/TCP)
+#
+# Apply: kubectl apply -f k8s/services/auth-service/networkpolicy.yaml
+# ──────────────────────────────────────────────────────────────────────────────
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: auth-service-netpol
+  namespace: shopmesh
+  labels:
+    app.kubernetes.io/name: auth-service
+    app.kubernetes.io/part-of: shopmesh
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: auth-service
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    # ── Allow traffic from frontend ──────────────────────────────────────────
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: frontend
+      ports:
+        - port: 3001
+          protocol: TCP
+    # ── Allow traffic from product-service (JWT validation) ──────────────────
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: product-service
+      ports:
+        - port: 3001
+          protocol: TCP
+    # ── Allow traffic from order-service (JWT validation) ────────────────────
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: order-service
+      ports:
+        - port: 3001
+          protocol: TCP
+    # ── Allow ingress controller (Nginx) ─────────────────────────────────────
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: 3001
+          protocol: TCP
+
+  egress:
+    # ── Allow MongoDB access ─────────────────────────────────────────────────
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: mongodb
+      ports:
+        - port: 27017
+          protocol: TCP
+    # ── Allow DNS resolution ─────────────────────────────────────────────────
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

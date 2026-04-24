@@ -1,0 +1,44 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# storage/nfs-pv.yaml  — NFS StorageClass + PersistentVolume for MongoDB
+#
+# BEFORE APPLYING: Replace 10.0.0.10 with your actual NFS server IP address.
+#                  Ensure /exports/mongodb exists on the NFS server and is
+#                  exported with proper permissions.
+#
+# Apply: kubectl apply -f k8s/storage/nfs-pv.yaml
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ── StorageClass (static NFS — no dynamic provisioner required) ───────────────
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: nfs-storage
+  labels:
+    app.kubernetes.io/part-of: shopmesh
+    app.kubernetes.io/component: storage
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+---
+# ── PersistentVolume — MongoDB data ───────────────────────────────────────────
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mongodb-pv
+  labels:
+    app.kubernetes.io/part-of: shopmesh
+    app.kubernetes.io/component: storage
+    pv-name: mongodb-pv
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs-storage
+  nfs:
+    server: 10.0.0.10          # ← Replace with your NFS server IP
+    path: /exports/mongodb     # ← Replace with your NFS export path
+  mountOptions:
+    - hard
+    - nfsvers=4.1

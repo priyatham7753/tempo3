@@ -1,8 +1,0 @@
-# Production overrides for auth-mongodb
-fullname: auth-mongodb
-auth:
-  user: authuser
-  password: authpass
-  database: authdb
-storage:
-  size: 5Gi

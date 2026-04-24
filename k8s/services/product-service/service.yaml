@@ -1,0 +1,24 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# services/product-service/service.yaml  — ClusterIP Service for Product
+# Internal DNS: product-service.shopmesh.svc.cluster.local:3002
+# Apply: kubectl apply -f k8s/services/product-service/service.yaml
+# ──────────────────────────────────────────────────────────────────────────────
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: product-service
+  namespace: shopmesh
+  labels:
+    app.kubernetes.io/name: product-service
+    app.kubernetes.io/part-of: shopmesh
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: product-service
+  ports:
+    - name: http
+      protocol: TCP
+      port: 3002
+      targetPort: 3002

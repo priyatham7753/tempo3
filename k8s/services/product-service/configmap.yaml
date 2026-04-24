@@ -1,0 +1,21 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# services/product-service/configmap.yaml  — Non-sensitive configuration
+# Apply: kubectl apply -f k8s/services/product-service/configmap.yaml
+# ──────────────────────────────────────────────────────────────────────────────
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: product-service-config
+  namespace: shopmesh
+  labels:
+    app.kubernetes.io/name: product-service
+    app.kubernetes.io/part-of: shopmesh
+    app.kubernetes.io/component: backend
+data:
+  PORT: "3002"
+  NODE_ENV: "production"
+  AUTH_SERVICE_URL: "http://auth-service.shopmesh.svc.cluster.local:3001"
+  MONGO_HOST: "mongodb-0.mongodb-headless.shopmesh.svc.cluster.local"
+  MONGO_PORT: "27017"
+  MONGO_DB: "productdb"
