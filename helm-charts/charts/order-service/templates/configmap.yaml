@@ -1,7 +1,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # charts/order-service/templates/configmap.yaml
 # ──────────────────────────────────────────────────────────────────────────────
-{{- $svc := index .Values "order-service" }}
+{{- $vals := .Values }}
 {{- $global := .Values.global }}
 apiVersion: v1
 kind: ConfigMap
@@ -13,6 +13,6 @@ metadata:
     app.kubernetes.io/part-of: {{ $global.partOf }}
     app.kubernetes.io/component: backend
 data:
-  {{- range $key, $value := $svc.env }}
+  {{- range $key, $value := $vals.env }}
   {{ $key }}: {{ $value | quote }}
   {{- end }}

@@ -2,7 +2,8 @@
 # charts/auth-service/templates/deployment.yaml
 # Values consumed from root values.yaml → .Values["auth-service"].*
 # ──────────────────────────────────────────────────────────────────────────────
-{{- $svc := index .Values "auth-service" }}
+#{{- $vals := .Values }}
+{{- $vals := .Values }}
 {{- $global := .Values.global }}
 apiVersion: apps/v1
 kind: Deployment
@@ -15,7 +16,7 @@ metadata:
     app.kubernetes.io/component: backend
     app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 spec:
-  replicas: {{ $svc.replicaCount }}
+  replicas: {{ $vals.replicaCount }}
   selector:
     matchLabels:
       app.kubernetes.io/name: auth-service
@@ -38,11 +39,11 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: auth-service
-          image: "{{ $svc.image.repository }}:{{ $svc.image.tag }}"
+          image: "{{ $vals.image.repository }}:{{ $vals.image.tag }}"
           imagePullPolicy: {{ $global.imagePullPolicy }}
           ports:
             - name: http
-              containerPort: {{ $svc.port }}
+              containerPort: {{ $vals.port }}
               protocol: TCP
 
           # ── Non-sensitive env from ConfigMap ──────────────────────────────────
@@ -65,26 +66,26 @@ spec:
 
           resources:
             requests:
-              cpu: {{ $svc.resources.requests.cpu | quote }}
-              memory: {{ $svc.resources.requests.memory | quote }}
+              cpu: {{ $vals.resources.requests.cpu | quote }}
+              memory: {{ $vals.resources.requests.memory | quote }}
             limits:
-              cpu: {{ $svc.resources.limits.cpu | quote }}
-              memory: {{ $svc.resources.limits.memory | quote }}
+              cpu: {{ $vals.resources.limits.cpu | quote }}
+              memory: {{ $vals.resources.limits.memory | quote }}
 
           livenessProbe:
             httpGet:
-              path: {{ $svc.probes.liveness.path }}
-              port: {{ $svc.port }}
-            initialDelaySeconds: {{ $svc.probes.liveness.initialDelaySeconds }}
-            periodSeconds: {{ $svc.probes.liveness.periodSeconds }}
-            timeoutSeconds: {{ $svc.probes.liveness.timeoutSeconds }}
-            failureThreshold: {{ $svc.probes.liveness.failureThreshold }}
+              path: {{ $vals.probes.liveness.path }}
+              port: {{ $vals.port }}
+            initialDelaySeconds: {{ $vals.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ $vals.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ $vals.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ $vals.probes.liveness.failureThreshold }}
 
           readinessProbe:
             httpGet:
-              path: {{ $svc.probes.readiness.path }}
-              port: {{ $svc.port }}
-            initialDelaySeconds: {{ $svc.probes.readiness.initialDelaySeconds }}
-            periodSeconds: {{ $svc.probes.readiness.periodSeconds }}
-            timeoutSeconds: {{ $svc.probes.readiness.timeoutSeconds }}
-            failureThreshold: {{ $svc.probes.readiness.failureThreshold }}
+              path: {{ $vals.probes.readiness.path }}
+              port: {{ $vals.port }}
+            initialDelaySeconds: {{ $vals.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ $vals.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ $vals.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ $vals.probes.readiness.failureThreshold }}

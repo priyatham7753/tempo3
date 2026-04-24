@@ -2,7 +2,7 @@
 # charts/frontend/templates/configmap.yaml
 # Non-sensitive env vars for the React / Nginx container
 # ──────────────────────────────────────────────────────────────────────────────
-{{- $svc := index .Values "frontend" }}
+{{- $vals := .Values }}
 {{- $global := .Values.global }}
 apiVersion: v1
 kind: ConfigMap
@@ -14,6 +14,6 @@ metadata:
     app.kubernetes.io/part-of: {{ $global.partOf }}
     app.kubernetes.io/component: frontend
 data:
-  {{- range $key, $value := $svc.env }}
+  {{- range $key, $value := $vals.env }}
   {{ $key }}: {{ $value | quote }}
   {{- end }}

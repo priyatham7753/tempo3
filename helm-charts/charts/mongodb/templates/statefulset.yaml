@@ -3,7 +3,8 @@
 # MongoDB StatefulSet with NFS-backed persistent storage
 # Values consumed from root values.yaml → .Values["mongodb"].*
 # ──────────────────────────────────────────────────────────────────────────────
-{{- $db := index .Values "mongodb" }}
+#{{- $vals := .Values }}
+{{- $vals := .Values }}
 {{- $global := .Values.global }}
 apiVersion: apps/v1
 kind: StatefulSet
@@ -14,10 +15,10 @@ metadata:
     app.kubernetes.io/name: mongodb
     app.kubernetes.io/part-of: {{ $global.partOf }}
     app.kubernetes.io/component: database
-    app.kubernetes.io/version: {{ $db.image.tag | quote }}
+    app.kubernetes.io/version: {{ $vals.image.tag | quote }}
 spec:
   serviceName: mongodb-headless       # must match the headless Service name
-  replicas: {{ $db.replicaCount }}
+  replicas: {{ $vals.replicaCount }}
   selector:
     matchLabels:
       app.kubernetes.io/name: mongodb
@@ -34,11 +35,11 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: mongodb
-          image: "{{ $db.image.repository }}:{{ $db.image.tag }}"
+          image: "{{ $vals.image.repository }}:{{ $vals.image.tag }}"
           imagePullPolicy: IfNotPresent
           ports:
             - name: mongodb
-              containerPort: {{ $db.port }}
+              containerPort: {{ $vals.port }}
               protocol: TCP
 
           # ── Root credentials from Secret ────────────────────────────────────
@@ -56,11 +57,11 @@ spec:
 
           resources:
             requests:
-              cpu: {{ $db.resources.requests.cpu | quote }}
-              memory: {{ $db.resources.requests.memory | quote }}
+              cpu: {{ $vals.resources.requests.cpu | quote }}
+              memory: {{ $vals.resources.requests.memory | quote }}
             limits:
-              cpu: {{ $db.resources.limits.cpu | quote }}
-              memory: {{ $db.resources.limits.memory | quote }}
+              cpu: {{ $vals.resources.limits.cpu | quote }}
+              memory: {{ $vals.resources.limits.memory | quote }}
 
           volumeMounts:
             - name: mongodb-data
@@ -72,10 +73,10 @@ spec:
                 - mongosh
                 - --eval
                 - "db.adminCommand('ping')"
-            initialDelaySeconds: {{ $db.probes.liveness.initialDelaySeconds }}
-            periodSeconds: {{ $db.probes.liveness.periodSeconds }}
-            timeoutSeconds: {{ $db.probes.liveness.timeoutSeconds }}
-            failureThreshold: {{ $db.probes.liveness.failureThreshold }}
+            initialDelaySeconds: {{ $vals.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ $vals.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ $vals.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ $vals.probes.liveness.failureThreshold }}
 
           readinessProbe:
             exec:
@@ -83,10 +84,10 @@ spec:
                 - mongosh
                 - --eval
                 - "db.adminCommand('ping')"
-            initialDelaySeconds: {{ $db.probes.readiness.initialDelaySeconds }}
-            periodSeconds: {{ $db.probes.readiness.periodSeconds }}
-            timeoutSeconds: {{ $db.probes.readiness.timeoutSeconds }}
-            failureThreshold: {{ $db.probes.readiness.failureThreshold }}
+            initialDelaySeconds: {{ $vals.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ $vals.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ $vals.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ $vals.probes.readiness.failureThreshold }}
 
   # ── Volume Claim Template (NFS-backed storage) ──────────────────────────────
   volumeClaimTemplates:
@@ -97,8 +98,8 @@ spec:
           app.kubernetes.io/part-of: {{ $global.partOf }}
       spec:
         accessModes:
-          - {{ $db.storage.accessMode }}
-        storageClassName: {{ $db.storage.storageClassName }}
+          - {{ $vals.storage.accessMode }}
+        storageClassName: {{ $vals.storage.storageClassName }}
         resources:
           requests:
-            storage: {{ $db.storage.size }}
+            storage: {{ $vals.storage.size }}

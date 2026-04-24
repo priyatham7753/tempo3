@@ -2,7 +2,7 @@
 # charts/product-service/templates/service.yaml
 # Internal DNS: product-service.shopmesh.svc.cluster.local:3002
 # ──────────────────────────────────────────────────────────────────────────────
-{{- $svc := index .Values "product-service" }}
+{{- $vals := .Values }}
 {{- $global := .Values.global }}
 apiVersion: v1
 kind: Service
@@ -20,5 +20,5 @@ spec:
   ports:
     - name: http
       protocol: TCP
-      port: {{ $svc.port }}
-      targetPort: {{ $svc.port }}
+      port: {{ $vals.port }}
+      targetPort: {{ $vals.port }}

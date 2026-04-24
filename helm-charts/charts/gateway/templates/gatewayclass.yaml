@@ -8,12 +8,14 @@
 # all Gateway objects referencing this class.
 # ──────────────────────────────────────────────────────────────────────────────
 {{- if .Values.global.gateway.enabled }}
-{{- $gw := index .Values "gateway" }}
+#{{- $vals := .Values }}
+{{- $gw := .Values }}
 apiVersion: gateway.networking.k8s.io/v1
 kind: GatewayClass
 metadata:
   name: {{ $gw.gatewayClassName }}
   labels:
+
     app.kubernetes.io/part-of: {{ .Values.global.partOf }}
     app.kubernetes.io/component: gateway
 spec:

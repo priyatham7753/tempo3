@@ -7,14 +7,15 @@
 # Note: The PersistentVolumeClaim itself is auto-created by the StatefulSet
 # volumeClaimTemplate. This file only provides the backing PV/StorageClass.
 # ──────────────────────────────────────────────────────────────────────────────
-{{- $db := index .Values "mongodb" }}
+#{{- $vals := .Values }}
+{{- $vals := .Values }}
 {{- $global := .Values.global }}
 
 # ── StorageClass (static NFS — no dynamic provisioner required) ───────────────
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: {{ $db.storage.storageClassName }}
+  name: {{ $vals.storage.storageClassName }}
   labels:
     app.kubernetes.io/part-of: {{ $global.partOf }}
     app.kubernetes.io/component: storage
@@ -33,14 +34,14 @@ metadata:
     pv-name: mongodb-pv
 spec:
   capacity:
-    storage: {{ $db.storage.size }}
+    storage: {{ $vals.storage.size }}
   accessModes:
-    - {{ $db.storage.accessMode }}
+    - {{ $vals.storage.accessMode }}
   persistentVolumeReclaimPolicy: Retain
-  storageClassName: {{ $db.storage.storageClassName }}
+  storageClassName: {{ $vals.storage.storageClassName }}
   nfs:
-    server: {{ $db.nfs.server | quote }}
-    path: {{ $db.nfs.path | quote }}
+    server: {{ $vals.nfs.server | quote }}
+    path: {{ $vals.nfs.path | quote }}
   mountOptions:
     - hard
     - nfsvers=4.1
