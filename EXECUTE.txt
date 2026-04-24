@@ -1,0 +1,371 @@
+================================================================================
+  SHOPMESH — EXECUTION GUIDE
+  Step-by-step commands to deploy the full stack on Kubernetes
+  Primary method: Helm umbrella chart + Envoy Kubernetes Gateway API
+================================================================================
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ OPTION A — LOCAL DEVELOPMENT (Docker Compose)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  cd tempo3
+
+  # Build and start all services
+  docker compose up --build
+
+  # Run in background
+  docker compose up --build -d
+
+  # View logs
+  docker compose logs -f
+
+  # Stop
+  docker compose down
+
+  # Stop and wipe MongoDB data
+  docker compose down -v
+
+  Access points:
+    Frontend    → http://localhost:3000
+    Auth API    → http://localhost:3001/health
+    Product API → http://localhost:3002/health
+    Order API   → http://localhost:3003/health
+    MongoDB     → localhost:27017
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ OPTION B — KUBERNETES (Helm + Envoy Gateway API)   [RECOMMENDED]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+────────────────────────────────────────────────────────────────────────────────
+ PRE-FLIGHT: NFS Server Setup  (run on your NFS server machine)
+────────────────────────────────────────────────────────────────────────────────
+
+  # Install NFS server
+  sudo apt update && sudo apt install -y nfs-kernel-server
+
+  # Create export directory
+  sudo mkdir -p /exports/mongodb
+  sudo chown -R nobody:nogroup /exports/mongodb
+  sudo chmod 777 /exports/mongodb
+
+  # Add export (replace 172.31.24.10 with your actual NFS server IP)
+  echo "/exports/mongodb *(rw,sync,no_subtree_check,no_root_squash)" \
+    | sudo tee -a /etc/exports
+
+  # Apply and restart
+  sudo exportfs -ra
+  sudo systemctl restart nfs-kernel-server
+  sudo systemctl enable  nfs-kernel-server
+
+  # Verify exports
+  showmount -e localhost
+
+
+────────────────────────────────────────────────────────────────────────────────
+ PRE-FLIGHT: NFS Client Setup  (run on ALL Kubernetes worker nodes)
+────────────────────────────────────────────────────────────────────────────────
+
+  sudo apt update && sudo apt install -y nfs-common
+
+  # Test mount from a node (replace IP and path)
+  sudo mount -t nfs 172.31.24.10:/exports/mongodb /mnt/test
+  ls /mnt/test
+  sudo umount /mnt/test
+
+
+────────────────────────────────────────────────────────────────────────────────
+ PRE-FLIGHT: Update NFS Config in values.yaml
+────────────────────────────────────────────────────────────────────────────────
+
+  Edit: helm-charts/values.yaml
+
+  Find the mongodb.nfs block and update:
+
+    mongodb:
+      nfs:
+        server: "YOUR_NFS_SERVER_IP"    ← change this
+        path: "/exports/mongodb"        ← change if different
+
+
+────────────────────────────────────────────────────────────────────────────────
+ STEP 1 — Install Kubernetes Gateway API CRDs
+────────────────────────────────────────────────────────────────────────────────
+
+  kubectl apply -f \
+    https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.1.0/standard-install.yaml
+
+  # Verify CRDs installed
+  kubectl get crd | grep gateway.networking.k8s.io
+
+  Expected output (4 CRDs):
+    gatewayclasses.gateway.networking.k8s.io
+    gateways.gateway.networking.k8s.io
+    httproutes.gateway.networking.k8s.io
+    referencegrants.gateway.networking.k8s.io
+
+
+────────────────────────────────────────────────────────────────────────────────
+ STEP 2 — Install Envoy Gateway Controller
+────────────────────────────────────────────────────────────────────────────────
+
+  helm install eg oci://docker.io/envoyproxy/gateway-helm \
+    --version v1.1.0 \
+    --namespace envoy-gateway-system \
+    --create-namespace
+
+  # Wait for the controller to be ready
+  kubectl rollout status deployment/envoy-gateway \
+    -n envoy-gateway-system --timeout=120s
+
+  # Verify
+  kubectl get pods -n envoy-gateway-system
+
+
+────────────────────────────────────────────────────────────────────────────────
+ STEP 3 — Deploy ShopMesh (first install)
+────────────────────────────────────────────────────────────────────────────────
+
+  cd tempo3
+
+  helm install shopmesh ./helm-charts \
+    --namespace shopmesh \
+    --create-namespace
+
+  # Watch pods come up
+  kubectl get pods -n shopmesh -w
+
+  # Verify gateway resources
+  kubectl get gatewayclass      -n shopmesh
+  kubectl get gateway           -n shopmesh
+  kubectl get httproute         -n shopmesh
+
+
+────────────────────────────────────────────────────────────────────────────────
+ STEP 4 — Verify the Deployment
+────────────────────────────────────────────────────────────────────────────────
+
+  # All resources in namespace
+  kubectl get all -n shopmesh
+
+  # Expected pods (all Running):
+  #   auth-service-xxxxx      (2 replicas)
+  #   product-service-xxxxx   (2 replicas)
+  #   order-service-xxxxx     (2 replicas)
+  #   frontend-xxxxx          (2 replicas)
+  #   mongodb-0               (1 replica — StatefulSet)
+
+  # Check gateway listener
+  kubectl describe gateway shopmesh-gateway -n shopmesh
+
+  # Check HTTPRoute
+  kubectl describe httproute shopmesh-httproute -n shopmesh
+
+  # Get the Gateway external IP / LoadBalancer
+  kubectl get svc -n envoy-gateway-system
+
+  # Health checks (replace GATEWAY_IP with the external IP above)
+  curl http://GATEWAY_IP/auth/health
+  curl http://GATEWAY_IP/products/health
+  curl http://GATEWAY_IP/orders/health
+  curl http://GATEWAY_IP/
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ UPGRADE (after config/image changes)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  helm upgrade shopmesh ./helm-charts --namespace shopmesh
+
+  # Upgrade with inline overrides (no values.yaml edit needed)
+  helm upgrade shopmesh ./helm-charts --namespace shopmesh \
+    --set "auth-service.image.tag=v2.0.0"
+
+  helm upgrade shopmesh ./helm-charts --namespace shopmesh \
+    --set "product-service.replicaCount=3"
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ SWITCH GATEWAY MODE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  # MODE: Envoy Gateway API (default, recommended)
+  helm upgrade shopmesh ./helm-charts -n shopmesh \
+    --set global.gateway.enabled=true
+
+  # MODE: Legacy Nginx Ingress (fallback)
+  helm upgrade shopmesh ./helm-charts -n shopmesh \
+    --set global.gateway.enabled=false
+
+  Note: When using Nginx Ingress mode, paths change to:
+    /api/auth, /api/products, /api/orders, /
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ BUILD & PUSH DOCKER IMAGES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  # Login to Docker Hub
+  docker login
+
+  # Build and push auth-service
+  docker build -t priyatham753/auth-service:latest ./auth-service
+  docker push priyatham753/auth-service:latest
+
+  # Build and push product-service
+  docker build -t priyatham753/product-service:latest ./product-service
+  docker push priyatham753/product-service:latest
+
+  # Build and push order-service
+  docker build -t priyatham753/order-service:latest ./order-service
+  docker push priyatham753/order-service:latest
+
+  # Build and push frontend
+  docker build -t priyatham753/frontend:latest ./frontend
+  docker push priyatham753/frontend:latest
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ DEBUG & MONITORING COMMANDS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  # Pod logs
+  kubectl logs -l app.kubernetes.io/name=auth-service    -n shopmesh --tail=50 -f
+  kubectl logs -l app.kubernetes.io/name=product-service -n shopmesh --tail=50 -f
+  kubectl logs -l app.kubernetes.io/name=order-service   -n shopmesh --tail=50 -f
+  kubectl logs -l app.kubernetes.io/name=frontend        -n shopmesh --tail=50 -f
+  kubectl logs -l app.kubernetes.io/name=mongodb         -n shopmesh --tail=50 -f
+
+  # Describe pod (events + probes)
+  kubectl describe pod -l app.kubernetes.io/name=auth-service -n shopmesh
+
+  # Shell into a running pod
+  kubectl exec -it -n shopmesh \
+    $(kubectl get pod -l app.kubernetes.io/name=auth-service \
+      -n shopmesh -o name | head -1) -- sh
+
+  # Connect to MongoDB inside the pod
+  kubectl exec -it mongodb-0 -n shopmesh -- \
+    mongosh -u admin -p shopmesh-db-password-2024 --authenticationDatabase admin
+
+  # View PersistentVolumeClaim status
+  kubectl get pvc -n shopmesh
+  kubectl get pv
+
+  # View secrets (names only)
+  kubectl get secrets -n shopmesh
+
+  # Decode a secret value
+  kubectl get secret auth-service-secret -n shopmesh \
+    -o jsonpath='{.data.JWT_SECRET}' | base64 --decode
+
+  # View ConfigMaps
+  kubectl get configmap -n shopmesh
+  kubectl describe configmap auth-service-config -n shopmesh
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ HELM OPERATIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  # Lint the chart (validate YAML syntax)
+  helm lint ./helm-charts
+
+  # Preview rendered templates (no cluster changes)
+  helm template shopmesh ./helm-charts -n shopmesh
+
+  # Preview only the gateway sub-chart
+  helm template shopmesh ./helm-charts -n shopmesh -s \
+    charts/gateway/templates/httproute.yaml
+
+  # Check release status
+  helm status shopmesh -n shopmesh
+
+  # Release history
+  helm history shopmesh -n shopmesh
+
+  # Rollback to previous release
+  helm rollback shopmesh 1 -n shopmesh
+
+  # Uninstall (keeps PVCs and PVs by default)
+  helm uninstall shopmesh -n shopmesh
+
+  # Delete the namespace (removes all resources including PVCs)
+  kubectl delete namespace shopmesh
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ GENERATING NEW SECRETS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  # Generate a new JWT secret
+  echo -n 'my-new-jwt-secret-2024' | base64
+
+  # Generate a new MongoDB password
+  echo -n 'my-new-mongo-password' | base64
+
+  # Generate auth MONGO_URI  (mongodb://admin:PASSWORD@host:27017/authdb?authSource=admin)
+  echo -n 'mongodb://admin:my-new-mongo-password@mongodb-0.mongodb-headless.shopmesh.svc.cluster.local:27017/authdb?authSource=admin' | base64
+
+  # Paste the output into helm-charts/values.yaml under the relevant secrets block
+  # Then run: helm upgrade shopmesh ./helm-charts -n shopmesh
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ ROUTING QUICK REFERENCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Gateway API mode (global.gateway.enabled: true — DEFAULT):
+    http://GATEWAY_IP/auth/*      → auth-service:3001
+    http://GATEWAY_IP/products/*  → product-service:3002
+    http://GATEWAY_IP/orders/*    → order-service:3003
+    http://GATEWAY_IP/            → frontend:80
+
+  Legacy Nginx mode (global.gateway.enabled: false):
+    http://CLUSTER_IP/api/auth/*      → auth-service:3001
+    http://CLUSTER_IP/api/products/*  → product-service:3002
+    http://CLUSTER_IP/api/orders/*    → order-service:3003
+    http://CLUSTER_IP/               → frontend:80
+
+  Internal cluster DNS (service-to-service):
+    auth-service     → http://auth-service.shopmesh.svc.cluster.local:3001
+    product-service  → http://product-service.shopmesh.svc.cluster.local:3002
+    order-service    → http://order-service.shopmesh.svc.cluster.local:3003
+    mongodb          → mongodb-0.mongodb-headless.shopmesh.svc.cluster.local:27017
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ QUICK TROUBLESHOOTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Problem: "no kind GatewayClass" error on helm install
+  Fix:     kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/
+           releases/download/v1.1.0/standard-install.yaml
+
+  Problem: Gateway stays in "Unknown" state
+  Fix:     kubectl get pods -n envoy-gateway-system
+           kubectl logs -n envoy-gateway-system -l app=envoy-gateway
+
+  Problem: MongoDB pod stuck in "Pending"
+  Fix:     kubectl describe pod mongodb-0 -n shopmesh
+           Check NFS server IP and path in values.yaml
+           Verify NFS is mounted on worker nodes
+
+  Problem: ImagePullBackOff on any service
+  Fix:     docker push priyatham753/<service-name>:latest
+           OR set imagePullPolicy: IfNotPresent in values.yaml
+
+  Problem: 502 Bad Gateway from Envoy
+  Fix:     kubectl get pods -n shopmesh
+           kubectl describe pod <pod-name> -n shopmesh
+           Check readiness probe status
+
+  Problem: Auth fails with "invalid token"
+  Fix:     Verify JWT_SECRET matches between auth-service and consumers
+           kubectl get secret auth-service-secret -n shopmesh \
+             -o jsonpath='{.data.JWT_SECRET}' | base64 --decode
+
+================================================================================
+  END OF EXECUTE.txt
+================================================================================

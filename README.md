@@ -1,450 +1,366 @@
-# E-Commerce Platform — Production-Grade Microservices DevOps System
+# ShopMesh
 
-> Umbrella Helm Chart · Functional Namespaces · NGINX Gateway Fabric · Argo CD GitOps
-
----
-
-## Architecture Overview
-
-```
-Internet
-   │
-   ▼
-NGINX Gateway Fabric (namespace: gateway)
-   ├── /              → frontend:80          (namespace: frontend)
-   ├── /api/auth      → auth-service:3001    (namespace: backend)
-   ├── /api/products  → product-service:3002 (namespace: backend)
-   └── /api/orders    → order-service:8000   (namespace: backend)
-
-Each backend service → own dedicated MongoDB StatefulSet (namespace: database)
-All MongoDB data persisted on NFS PersistentVolumes
-NetworkPolicy: Default-Deny-All + per-service allowlists
-Dev vs Prod = Helm values files ONLY (no separate namespaces/clusters)
-```
-
-### Services
-
-| Service | Language | Port | Database |
-|---------|----------|------|----------|
-| frontend | React + Nginx | 80 | — |
-| auth-service | Node.js / Express | 3001 | mongodb-auth |
-| product-service | Node.js / Express | 3002 | mongodb-product |
-| order-service | Python / FastAPI | 8000 | mongodb-order |
+> Production-grade microservices e-commerce platform on Kubernetes.
+> Deployed via umbrella Helm chart with **Envoy Kubernetes Gateway API** routing.
 
 ---
 
-## Namespace Strategy
+## Table of Contents
 
-> **Critical:** Only functional namespaces are used. Dev vs Prod is controlled **only** via Helm values files — never via namespaces or clusters.
-
-| Namespace | Contains |
-|-----------|----------|
-| `frontend` | React frontend Deployment + Service |
-| `backend` | auth-service, product-service, order-service |
-| `database` | 3× MongoDB StatefulSets + Headless Services + PVCs |
-| `gateway` | NGINX Gateway Fabric controller + HTTPRoutes |
+- [Architecture](#architecture)
+- [Services](#services)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+- [Prerequisites](#prerequisites)
+- [Local Development](#local-development-docker-compose)
+- [Kubernetes Deployment](#kubernetes-deployment-helm)
+- [Routing Table](#routing-table)
+- [Configuration](#configuration-reference)
+- [Gateway Modes](#switching-between-gateway-modes)
+- [MongoDB Persistence](#mongodb-persistence)
+- [Secrets](#secrets-management)
+- [Useful Commands](#useful-commands)
+- [Troubleshooting](#troubleshooting)
 
 ---
 
-## Repository Structure
+## Architecture
 
 ```
-capstone/
-├── frontend/
-│   ├── src/                         # React source code
-│   ├── Dockerfile
-│   └── nginx.conf
+  User Traffic
+      │
+      ▼  :80
+  ┌─────────────────────────────────────────┐
+  │        Envoy Gateway (K8s Gateway API)  │
+  └──────────┬──────────┬──────────┬────────┘
+             │          │          │
+          /auth    /products    /orders     /
+             │          │          │         │
+         ┌───┴──┐  ┌────┴─┐  ┌───┴──┐  ┌───┴────┐
+         │ Auth │  │ Prod │  │ Ord  │  │Frontend│
+         │ :3001│  │ :3002│  │ :3003│  │  :80   │
+         └───┬──┘  └────┬─┘  └───┬──┘  └────────┘
+             └──────────┴────────┘
+                        │
+              ┌─────────┴──────────┐
+              │ MongoDB StatefulSet│
+              │   (NFS PVC 10Gi)   │
+              └────────────────────┘
+```
+
+---
+
+## Services
+
+| Service | Language | Port | Database | Role |
+|---------|----------|------|----------|------|
+| **auth-service** | Node.js | 3001 | authdb | JWT auth & user management |
+| **product-service** | Node.js | 3002 | productdb | Product catalog CRUD |
+| **order-service** | Python | 3003 | orderdb | Order management |
+| **frontend** | React + Nginx | 80 | — | Single-page application |
+| **mongodb** | mongo:7.0 | 27017 | — | Shared DB (StatefulSet) |
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Container Runtime | Docker |
+| Orchestration | Kubernetes ≥ 1.28 |
+| Package Manager | Helm v3 |
+| Ingress/Gateway | Kubernetes Gateway API + Envoy Gateway |
+| Database | MongoDB 7.0 |
+| Storage | NFS-backed PersistentVolume |
+| Auth | JWT (jsonwebtoken) |
+| Local Dev | Docker Compose |
+
+---
+
+## Project Structure
+
+```
+tempo3/
+├── README.md
+├── EXECUTE.txt                     # Step-by-step execution guide
+├── docker-compose.yml              # Local dev stack
 │
-├── auth-service/
-│   ├── src/
-│   └── Dockerfile
+├── auth-service/                   # Node.js JWT service
+├── product-service/                # Node.js product service
+├── order-service/                  # Python order service
+├── frontend/                       # React + Nginx SPA
 │
-├── product-service/
-│   ├── src/
-│   └── Dockerfile
+├── k8s/                            # Raw kubectl manifests (legacy reference)
+│   ├── namespace.yaml
+│   ├── ingress.yaml                # Nginx Ingress (superseded by Helm gateway)
+│   ├── mongodb/
+│   ├── services/
+│   ├── network/
+│   └── storage/
 │
-├── order-service/
-│   ├── app/
-│   ├── requirements.txt
-│   └── Dockerfile
-│
-├── helm-charts-repo/                # Umbrella Helm chart (single deployable unit)
-│   ├── README.md
-│   ├── ecommerce-platform/          # Umbrella chart root
-│   │   ├── Chart.yaml               # 7 dependencies via file://charts/<name>
-│   │   ├── values.yaml              # Global baseline (namespaces, registry, resources)
-│   │   ├── values-dev.yaml          # Dev overrides: SHA image tags, 1 replica
-│   │   ├── values-prod.yaml         # Prod overrides: semver tags, 2 replicas
-│   │   └── charts/                  # ALL subcharts live here
-│   │       ├── frontend/
-│   │       ├── auth-service/
-│   │       ├── product-service/
-│   │       ├── order-service/
-│   │       ├── mongodb-auth/
-│   │       ├── mongodb-product/
-│   │       └── mongodb-order/
-│   │
-│   ├── gitops/
-│   │   ├── argocd/appproject.yaml           # ArgoCD AppProject
-│   │   └── environments/
-│   │       ├── dev/application.yaml         # ArgoCD Application: ecommerce-dev
-│   │       └── prod/application.yaml        # ArgoCD Application: ecommerce-prod
-│   │
-│   └── k8s/
-│       ├── 00-namespaces.yaml       # 4 functional namespaces + default-deny policies
-│       ├── 01-nfs-storage.yaml      # StorageClass + 3 PersistentVolumes (NFS)
-│       └── 02-gateway-api.yaml      # GatewayClass + Gateway + ReferenceGrants + HTTPRoutes
-│
-├── k8s/                             # Original k8s manifests (same files, also used)
-│   ├── 00-namespaces.yaml
-│   ├── 01-nfs-storage.yaml
-│   └── 02-gateway-api.yaml
-│
-├── gitops/                          # Original GitOps directory (legacy)
-│
-├── docker-compose.yml               # Local development only
-├── DEPLOYMENT_STEPS.txt             # Full step-by-step cluster deployment guide
-└── README.md                        # This file
+└── helm-charts/                    # PRIMARY DEPLOYMENT METHOD
+    ├── Chart.yaml                  # Umbrella chart
+    ├── values.yaml                 # ONE global values file
+    └── charts/
+        ├── auth-service/           # Deployment, Service, ConfigMap, Secret
+        ├── product-service/        # Deployment, Service, ConfigMap, Secret
+        ├── order-service/          # Deployment, Service, ConfigMap, Secret
+        ├── frontend/               # Deployment, Service, ConfigMap
+        ├── mongodb/                # StatefulSet, Headless Svc, PVC, Secret
+        └── gateway/                # GatewayClass, Gateway, HTTPRoute
 ```
 
 ---
 
 ## Prerequisites
 
-| Tool | Version | Purpose |
+| Tool | Version | Install |
 |------|---------|---------|
-| Kubernetes | 1.28+ | Container orchestration |
-| kubectl | 1.28+ | Cluster management |
-| Helm | 3.13+ | Chart deployment |
-| Argo CD | 2.9+ | GitOps continuous delivery |
-| NFS Server | — | Persistent storage for MongoDB |
-| Docker Hub account | — | Container image registry |
+| `kubectl` | ≥ 1.28 | https://kubernetes.io/docs/tasks/tools/ |
+| `helm` | ≥ 3.12 | https://helm.sh/docs/intro/install/ |
+| `docker` | ≥ 24 | https://docs.docker.com/get-docker/ |
+| Kubernetes cluster | ≥ 1.28 | minikube / kind / cloud cluster |
+| NFS server | — | Required for MongoDB persistence |
 
 ---
 
-## Quick Start Deployment
-
-> For the full step-by-step guide with all commands, see **DEPLOYMENT_STEPS.txt**
-
-### Step 1 — Configure NFS Server
+## Local Development (Docker Compose)
 
 ```bash
-ssh user@YOUR_NFS_IP
+# Start the full stack
+docker compose up --build
 
-sudo mkdir -p /exports/mongodb-auth /exports/mongodb-product /exports/mongodb-order
-sudo chmod 777 /exports/mongodb-auth /exports/mongodb-product /exports/mongodb-order
+# Access points
+#   Frontend    → http://localhost:3000
+#   Auth API    → http://localhost:3001
+#   Product API → http://localhost:3002
+#   Order API   → http://localhost:3003
+#   MongoDB     → localhost:27017
 
-sudo tee -a /etc/exports <<EOF
-/exports/mongodb-auth    *(rw,sync,no_subtree_check,no_root_squash)
-/exports/mongodb-product *(rw,sync,no_subtree_check,no_root_squash)
-/exports/mongodb-order   *(rw,sync,no_subtree_check,no_root_squash)
-EOF
+# Stop
+docker compose down
 
-sudo exportfs -ra && sudo systemctl restart nfs-kernel-server
-showmount -e localhost
+# Stop and remove volumes
+docker compose down -v
 ```
 
-### Step 2 — Create Namespaces & Network Policies
+---
+
+## Kubernetes Deployment (Helm)
+
+### Step 1 — Install Gateway API CRDs
 
 ```bash
-kubectl apply -f k8s/00-namespaces.yaml
+kubectl apply -f \
+  https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.1.0/standard-install.yaml
 
 # Verify
-kubectl get namespaces | grep -E "frontend|backend|database|gateway"
-kubectl get networkpolicy -A
+kubectl get crd | grep gateway.networking.k8s.io
 ```
 
-### Step 3 — Create NFS Storage
+### Step 2 — Install Envoy Gateway Controller
 
 ```bash
-# Replace NFS server IP first
-sed -i 's/10.0.0.10/YOUR_NFS_IP/g' k8s/01-nfs-storage.yaml
+helm install eg oci://docker.io/envoyproxy/gateway-helm \
+  --version v1.1.0 \
+  --namespace envoy-gateway-system \
+  --create-namespace
 
-kubectl apply -f k8s/01-nfs-storage.yaml
-
-# Verify PVs are Available
-kubectl get pv
-# Must see: auth-mongodb-pv, product-mongodb-pv, order-mongodb-pv — STATUS: Available
+# Wait for readiness
+kubectl rollout status deployment/envoy-gateway \
+  -n envoy-gateway-system --timeout=120s
 ```
 
-### Step 4 — Install NGINX Gateway Fabric
+### Step 3 — Configure NFS (values.yaml)
 
-```bash
-# Install Gateway API CRDs
-kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.1.0/standard-install.yaml
-
-# Install NGINX Gateway Fabric CRDs
-kubectl apply -f https://raw.githubusercontent.com/nginx/nginx-gateway-fabric/v1.4.0/deploy/crds.yaml
-
-# Install NGINX Gateway Fabric controller
-helm install ngf oci://ghcr.io/nginx/charts/nginx-gateway-fabric \
-  --namespace gateway \
-  --create-namespace \
-  --set service.type=LoadBalancer \
-  --version 1.4.0
-
-# Wait for controller
-kubectl rollout status deployment/ngf-nginx-gateway-fabric -n gateway --timeout=120s
-
-# Get external IP (your app's public entry point)
-kubectl get svc -n gateway
+Edit `helm-charts/values.yaml` and update:
+```yaml
+mongodb:
+  nfs:
+    server: "YOUR_NFS_SERVER_IP"    # e.g. 192.168.1.100
+    path: "/exports/mongodb"        # NFS export path
 ```
 
-### Step 5 — Apply Gateway Routes
+### Step 4 — Deploy ShopMesh
 
 ```bash
-kubectl apply -f k8s/02-gateway-api.yaml
+# Install
+helm install shopmesh ./helm-charts \
+  --namespace shopmesh \
+  --create-namespace
+
+# Upgrade (after config changes)
+helm upgrade shopmesh ./helm-charts --namespace shopmesh
 
 # Verify
-kubectl get gatewayclass          # nginx — ACCEPTED=True
-kubectl get gateway -n gateway    # ecommerce-gateway — PROGRAMMED=True
-kubectl get httproute -A          # frontend-route, auth-route, product-route, order-route
-kubectl get referencegrant -A     # allow-gateway-to-frontend, allow-gateway-to-backend
+kubectl get all -n shopmesh
+kubectl get gateway,httproute -n shopmesh
 ```
 
-### Step 6 — Bootstrap Umbrella Chart Dependencies
+---
 
-```bash
-cd helm-charts-repo/ecommerce-platform
+## Routing Table
 
-# Resolve all 7 file://charts/* dependencies declared in Chart.yaml
-helm dependency update
+All external traffic enters through the Envoy Gateway on **port 80**.
 
-cd ../..
+| Path Prefix | Service | Port |
+|-------------|---------|------|
+| `/auth` | auth-service | 3001 |
+| `/products` | product-service | 3002 |
+| `/orders` | order-service | 3003 |
+| `/` | frontend | 80 |
+
+---
+
+## Configuration Reference
+
+All configuration is in one file: **`helm-charts/values.yaml`**
+
+```yaml
+global:
+  namespace: shopmesh
+  imagePullPolicy: Always
+  gateway:
+    enabled: true          # true = Envoy Gateway | false = Nginx Ingress
+
+mongodb:
+  storage:
+    size: 10Gi
+    storageClassName: nfs-storage
+  nfs:
+    server: "172.31.24.10"
+    path: "/exports/mongodb"
 ```
 
-### Step 7 — Deploy All Services (Single Command)
-
+Override at deploy time without editing values.yaml:
 ```bash
-# DEV deployment — SHA image tags, 1 replica per service
-helm upgrade --install ecommerce-dev \
-  helm-charts-repo/ecommerce-platform \
-  -f helm-charts-repo/ecommerce-platform/values.yaml \
-  -f helm-charts-repo/ecommerce-platform/values-dev.yaml \
-  --create-namespace \
-  --atomic \
-  --timeout 5m
-
-# This deploys in one shot:
-#   frontend (namespace: frontend)
-#   auth-service, product-service, order-service (namespace: backend)
-#   mongodb-auth, mongodb-product, mongodb-order (namespace: database)
+helm upgrade shopmesh ./helm-charts -n shopmesh \
+  --set "auth-service.image.tag=v2.0.0" \
+  --set "product-service.replicaCount=3" \
+  --set "mongodb.nfs.server=192.168.1.100"
 ```
 
+---
+
+## Switching Between Gateway Modes
+
 ```bash
-# PROD deployment — semver image tags (v1.0.0), 2 replicas per service
-helm upgrade --install ecommerce-prod \
-  helm-charts-repo/ecommerce-platform \
-  -f helm-charts-repo/ecommerce-platform/values.yaml \
-  -f helm-charts-repo/ecommerce-platform/values-prod.yaml \
-  --create-namespace \
-  --atomic \
-  --timeout 5m
+# Envoy Gateway API (default — recommended)
+helm upgrade shopmesh ./helm-charts -n shopmesh \
+  --set global.gateway.enabled=true
+
+# Legacy Nginx Ingress (fallback)
+helm upgrade shopmesh ./helm-charts -n shopmesh \
+  --set global.gateway.enabled=false
 ```
 
-### Step 8 — Install Argo CD
+When using legacy mode, routes change to: `/api/auth`, `/api/products`, `/api/orders`.
 
-```bash
-kubectl create namespace argocd
-kubectl apply -n argocd \
-  -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+---
 
-kubectl rollout status deployment/argocd-server -n argocd --timeout=300s
+## MongoDB Persistence
 
-# Get admin password
-kubectl -n argocd get secret argocd-initial-admin-secret \
-  -o jsonpath="{.data.password}" | base64 -d && echo
-
-# Access UI
-kubectl port-forward svc/argocd-server -n argocd 8080:443
-# Open: https://localhost:8080  (admin / <password>)
+```
+StatefulSet: mongodb
+  └── volumeClaimTemplate: mongodb-data
+        └── PVC: mongodb-data-mongodb-0
+              └── PV: mongodb-pv  (NFS-backed)
+                    └── NFS Server:/exports/mongodb
 ```
 
-### Step 9 — Apply Argo CD Applications
-
+**NFS server setup (run on NFS server):**
 ```bash
-# AppProject (grants access to all 4 functional namespaces)
-kubectl apply -f helm-charts-repo/gitops/argocd/appproject.yaml
-
-# Dev Application — auto-syncs when values-dev.yaml changes
-kubectl apply -f helm-charts-repo/gitops/environments/dev/application.yaml
-
-# Prod Application — auto-syncs when values-prod.yaml changes
-kubectl apply -f helm-charts-repo/gitops/environments/prod/application.yaml
-
-# Watch sync status
-kubectl get applications -n argocd
-# ecommerce-dev   Synced  Healthy
-# ecommerce-prod  Synced  Healthy
+mkdir -p /exports/mongodb
+chown -R nobody:nogroup /exports/mongodb
+echo "/exports/mongodb *(rw,sync,no_subtree_check,no_root_squash)" >> /etc/exports
+exportfs -ra
+systemctl restart nfs-kernel-server
 ```
 
-### Step 9 — Apply Argo CD Applications
+**NFS client setup (run on ALL Kubernetes nodes):**
+```bash
+apt install -y nfs-common
+```
+
+---
+
+## Secrets Management
+
+Secrets are base64-encoded in `helm-charts/values.yaml`.
 
 ```bash
-# All pods healthy
-kubectl get pods -A
-# No CrashLoopBackOff, no Pending
+# Encode a new secret
+echo -n 'my-new-password' | base64
 
-# MongoDB StatefulSets and PVCs
-kubectl get statefulsets -n database
-kubectl get pvc -n database
-# All PVCs must be Bound
+# Decode to verify
+echo 'bXktbmV3LXBhc3N3b3Jk' | base64 --decode
+```
 
-# Backend services and endpoints
-kubectl get svc -n backend
-kubectl get endpoints -n backend
+**Default credentials (replace before production):**
 
-# Get Gateway external IP
-GATEWAY_IP=$(kubectl get svc -n gateway \
-  -o jsonpath='{.items[?(@.spec.type=="LoadBalancer")].status.loadBalancer.ingress[0].ip}')
-echo "Gateway: http://$GATEWAY_IP"
+| Secret | Default Value |
+|--------|--------------|
+| `JWT_SECRET` | `shopmesh_jwt_secret_change_in_production_2024` |
+| `MONGO_ROOT_USERNAME` | `admin` |
+| `MONGO_ROOT_PASSWORD` | `shopmesh-db-password-2024` |
 
-# Test all routes
-curl http://$GATEWAY_IP/                  # React frontend (HTML)
-curl http://$GATEWAY_IP/api/auth/health   # Auth service
-curl http://$GATEWAY_IP/api/products      # Product service
-curl http://$GATEWAY_IP/api/orders        # Order service
+---
 
-# Argo CD — all apps synced
-kubectl get applications -n argocd
+## Useful Commands
+
+```bash
+# All ShopMesh resources
+kubectl get all -n shopmesh
+
+# Gateway resources
+kubectl get gatewayclass,gateway,httproute -n shopmesh
+
+# Logs
+kubectl logs -l app.kubernetes.io/name=auth-service    -n shopmesh --tail=50
+kubectl logs -l app.kubernetes.io/name=product-service -n shopmesh --tail=50
+kubectl logs -l app.kubernetes.io/name=order-service   -n shopmesh --tail=50
+kubectl logs -l app.kubernetes.io/name=mongodb         -n shopmesh --tail=50
+
+# Shell into a pod
+kubectl exec -it -n shopmesh \
+  $(kubectl get pod -l app.kubernetes.io/name=auth-service -n shopmesh -o name | head -1) \
+  -- sh
+
+# Helm operations
+helm status   shopmesh -n shopmesh
+helm history  shopmesh -n shopmesh
+helm template shopmesh ./helm-charts -n shopmesh   # dry-run preview
+helm lint     ./helm-charts
+
+# Uninstall
+helm uninstall shopmesh -n shopmesh
 ```
 
 ---
 
 ## Troubleshooting
 
-### `helm dependency update` fails
-```bash
-# Make sure you are inside the correct directory
-cd helm-charts-repo/ecommerce-platform
-ls charts/
-# Must see 7 subdirectories: frontend, auth-service, product-service,
-# order-service, mongodb-auth, mongodb-product, mongodb-order
-```
-
-### Pod: ImagePullBackOff
-```bash
-kubectl describe pod <pod> -n backend
-# Fix: ensure docker.io/myrepo is set to YOUR Docker Hub org in values.yaml
-# Fix: verify DOCKER_USERNAME / DOCKER_PASSWORD secrets in GitHub Actions
-```
-
-### PVC: Pending
-```bash
-kubectl describe pvc mongodb-auth-pvc -n database
-# Fix: verify NFS IP in k8s/01-nfs-storage.yaml
-# Fix: verify NFS exports: showmount -e YOUR_NFS_IP
-# Fix: verify nfs-common installed on all worker nodes
-```
-
-### Pod: CrashLoopBackOff
-```bash
-kubectl logs <pod> -n backend --previous
-# Fix: verify MONGO_URI in the service Secret is correct
-# Fix: ensure MongoDB pod in 'database' namespace is Running first
-kubectl get pods -n database
-```
-
-### Gateway: 502 Bad Gateway
-```bash
-kubectl get pods -n backend         # service pods must be Running
-kubectl get httproute -A            # routes must show Accepted=True
-kubectl get referencegrant -A       # both ReferenceGrants must exist
-kubectl logs -n gateway -l app.kubernetes.io/name=nginx-gateway -f
-```
-
-### Gateway: HTTPRoute not routing (no parent match)
-```bash
-kubectl describe httproute auth-route -n gateway
-# parentRefs name must match: ecommerce-gateway
-# parentRefs namespace must match: gateway
-kubectl get gateway -n gateway
-```
-
-### MongoDB: AuthenticationFailed
-```bash
-# Check Secret values match between MongoDB and the service
-kubectl get secret mongodb-auth-secret -n database \
-  -o jsonpath='{.data.MONGO_ROOT_PASSWORD}' | base64 -d
-
-kubectl get secret auth-secret -n backend \
-  -o jsonpath='{.data.MONGO_URI}' | base64 -d
-# Both passwords must match global.mongodb.password in values.yaml
-```
-
-### Argo CD: OutOfSync
-```bash
-argocd app diff ecommerce-dev     # shows what's different
-argocd app sync ecommerce-dev
-# Fix: ensure repoURL in application.yaml matches your actual repo URL
-```
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `no kind "GatewayClass"` | CRDs not installed | Re-run Step 1 |
+| Gateway stays `Unknown` | Envoy controller not ready | Check `envoy-gateway-system` namespace |
+| MongoDB pod `Pending` | NFS PV not bound | Verify NFS server IP and export path |
+| `ImagePullBackOff` | Image not in registry | Push image or set `imagePullPolicy: IfNotPresent` |
+| 502 Bad Gateway | Pod not ready yet | Check readiness probe with `kubectl describe pod` |
+| `helm install` CRD error | Gateway API CRDs missing | Re-apply standard-install.yaml |
 
 ---
 
-## Network Policy Matrix
+## Docker Hub Images
 
-| Source | Destination | Port | Allowed |
-|--------|-------------|------|---------|
-| gateway ns | frontend:80 | 80 | ✅ |
-| gateway ns | auth-service:3001 | 3001 | ✅ |
-| gateway ns | product-service:3002 | 3002 | ✅ |
-| gateway ns | order-service:8000 | 8000 | ✅ |
-| frontend ns | auth/product/order | 3001/3002/8000 | ✅ |
-| order-service | auth-service | 3001 | ✅ |
-| order-service | product-service | 3002 | ✅ |
-| auth-service | mongodb-auth | 27017 | ✅ |
-| product-service | mongodb-product | 27017 | ✅ |
-| order-service | mongodb-order | 27017 | ✅ |
-| auth-service | mongodb-product/order | 27017 | ❌ |
-| product-service | mongodb-auth/order | 27017 | ❌ |
-| Any | Any (default deny) | Any | ❌ |
+| Service | Image |
+|---------|-------|
+| auth-service | `priyatham753/auth-service:latest` |
+| product-service | `priyatham753/product-service:latest` |
+| order-service | `priyatham753/order-service:latest` |
+| frontend | `priyatham753/frontend:latest` |
+| mongodb | `mongo:7.0` |
 
 ---
 
-## Global Values Reference
-
-All subchart templates read from `.Values.global.*` injected by the umbrella chart:
-
-| Key | Default | Description |
-|-----|---------|-------------|
-| `global.environment` | `dev` | Label applied to all resources |
-| `global.imageRegistry` | `docker.io/myrepo` | Docker registry prefix |
-| `global.namespaces.frontend` | `frontend` | Frontend workload namespace |
-| `global.namespaces.backend` | `backend` | Backend service namespace |
-| `global.namespaces.database` | `database` | MongoDB namespace |
-| `global.namespaces.gateway` | `gateway` | Gateway namespace |
-| `global.mongodb.username` | `admin` | MongoDB root username |
-| `global.mongodb.password` | `secret` | MongoDB root password |
-| `global.resources.limits.cpu` | `500m` | CPU limit for all services |
-| `global.resources.limits.memory` | `512Mi` | Memory limit for all services |
-| `global.jwtSecret` | `CHANGE_ME_...` | JWT signing secret |
-
----
-
-## Local Development
-
-```bash
-# Start all services locally with Docker Compose
-docker-compose up --build
-
-# Services available at:
-# Frontend:        http://localhost:3000
-# Auth Service:    http://localhost:3001
-# Product Service: http://localhost:3002
-# Order Service:   http://localhost:8000
-```
-
----
-
-## Security Checklist
-
-- [x] Default-Deny NetworkPolicies in all functional namespaces
-- [x] Each MongoDB only accepts connections from its ownerApp service
-- [x] Sensitive values (MONGO_URI, JWT_SECRET) stored in Kubernetes Secrets
-- [x] Non-sensitive config stored in ConfigMaps
-- [x] Image tags use commit SHA or semver for full traceability
-- [x] Argo CD self-heal prevents manual cluster drift
-- [ ] Replace `CHANGE_ME_JWT_SECRET` with a real 32+ char secret in values.yaml
-- [ ] Replace `10.0.0.10` with your actual NFS server IP in k8s/01-nfs-storage.yaml
-- [ ] Replace `docker.io/myrepo` with your Docker Hub org in values.yaml
-- [ ] Use Sealed Secrets or External Secrets Operator for prod passwords
+*ShopMesh — Kubernetes-native microservices e-commerce platform.*

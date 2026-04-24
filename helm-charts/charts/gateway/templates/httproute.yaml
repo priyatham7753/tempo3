@@ -1,0 +1,124 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# charts/gateway/templates/httproute.yaml
+#
+# Dual-mode routing:
+#   global.gateway.enabled = true  → Kubernetes Gateway API HTTPRoute
+#   global.gateway.enabled = false → Legacy Nginx Ingress
+#
+# Gateway API route table (from global values.yaml → gateway.routes):
+#   /auth     → auth-service:3001
+#   /products → product-service:3002
+#   /orders   → order-service:3003
+#   /         → frontend:80
+# ──────────────────────────────────────────────────────────────────────────────
+{{- $global := .Values.global }}
+{{- $gw := index .Values "gateway" }}
+
+{{- if $global.gateway.enabled }}
+# ╔══════════════════════════════════════════════════════════════════════════════
+# ║  MODE: Envoy Gateway API (global.gateway.enabled = true)
+# ╚══════════════════════════════════════════════════════════════════════════════
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: shopmesh-httproute
+  namespace: {{ $global.namespace }}
+  labels:
+    app.kubernetes.io/name: shopmesh-httproute
+    app.kubernetes.io/part-of: {{ $global.partOf }}
+    app.kubernetes.io/component: gateway
+spec:
+  parentRefs:
+    - name: shopmesh-gateway
+      namespace: {{ $global.namespace }}
+  rules:
+    # ── /auth → auth-service:3001 ──────────────────────────────────────────────
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /auth
+      backendRefs:
+        - name: auth-service
+          port: 3001
+
+    # ── /products → product-service:3002 ──────────────────────────────────────
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /products
+      backendRefs:
+        - name: product-service
+          port: 3002
+
+    # ── /orders → order-service:3003 ──────────────────────────────────────────
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /orders
+      backendRefs:
+        - name: order-service
+          port: 3003
+
+    # ── / → frontend:80 (catch-all, must be last) ─────────────────────────────
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: frontend
+          port: 80
+
+{{- else }}
+# ╔══════════════════════════════════════════════════════════════════════════════
+# ║  MODE: Legacy Nginx Ingress (global.gateway.enabled = false)
+# ╚══════════════════════════════════════════════════════════════════════════════
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: shopmesh-ingress
+  namespace: {{ $global.namespace }}
+  labels:
+    app.kubernetes.io/name: shopmesh-ingress
+    app.kubernetes.io/part-of: {{ $global.partOf }}
+    app.kubernetes.io/component: gateway
+  annotations:
+    {{- range $k, $v := $global.ingress.annotations }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+spec:
+  ingressClassName: {{ $global.ingress.className }}
+  rules:
+    - http:
+        paths:
+          - path: /api/auth
+            pathType: Prefix
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 3001
+
+          - path: /api/products
+            pathType: Prefix
+            backend:
+              service:
+                name: product-service
+                port:
+                  number: 3002
+
+          - path: /api/orders
+            pathType: Prefix
+            backend:
+              service:
+                name: order-service
+                port:
+                  number: 3003
+
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
+{{- end }}
