@@ -1,23 +1,16 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # charts/gateway/templates/httproute.yaml
 #
-# Dual-mode routing:
-#   global.gateway.enabled = true  → Kubernetes Gateway API HTTPRoute
-#   global.gateway.enabled = false → Legacy Nginx Ingress
-#
-# Gateway API route table (from global values.yaml → gateway.routes):
-#   /auth     → auth-service:3001
-#   /products → product-service:3002
-#   /orders   → order-service:3003
-#   /         → frontend:80
+# Clean routing (NO rewrite):
+#   /api/auth     → auth-service
+#   /api/products → product-service
+#   /api/orders   → order-service
+#   /             → frontend
 # ──────────────────────────────────────────────────────────────────────────────
 {{- $global := .Values.global }}
-{{- $vals := .Values }}
 
 {{- if $global.gateway.enabled }}
-# ╔══════════════════════════════════════════════════════════════════════════════
-# ║  MODE: Envoy Gateway API (global.gateway.enabled = true)
-# ╚══════════════════════════════════════════════════════════════════════════════
+
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -27,57 +20,41 @@ metadata:
     app.kubernetes.io/name: shopmesh-httproute
     app.kubernetes.io/part-of: {{ $global.partOf }}
     app.kubernetes.io/component: gateway
+
 spec:
   parentRefs:
     - name: shopmesh-gateway
       namespace: {{ $global.namespace }}
+
   rules:
-    # ── /auth → auth-service:3001 ──────────────────────────────
+    # ── AUTH SERVICE ─────────────────────────────────────────
     - matches:
         - path:
             type: PathPrefix
-            value: /auth
-      filters:
-        - type: URLRewrite
-          urlRewrite:
-            path:
-              type: ReplacePrefixMatch
-              replacePrefixMatch: /api/auth
+            value: /api/auth
       backendRefs:
         - name: auth-service
           port: 3001
 
-    # ── /products → product-service:3002 ──────────────────────
+    # ── PRODUCT SERVICE ──────────────────────────────────────
     - matches:
         - path:
             type: PathPrefix
-            value: /products
-      filters:
-        - type: URLRewrite
-          urlRewrite:
-            path:
-              type: ReplacePrefixMatch
-              replacePrefixMatch: /api/products
+            value: /api/products
       backendRefs:
         - name: product-service
           port: 3002
 
-    # ── /orders → order-service:3003 ──────────────────────────
+    # ── ORDER SERVICE ────────────────────────────────────────
     - matches:
         - path:
             type: PathPrefix
-            value: /orders
-      filters:
-        - type: URLRewrite
-          urlRewrite:
-            path:
-              type: ReplacePrefixMatch
-              replacePrefixMatch: /api/orders
+            value: /api/orders
       backendRefs:
         - name: order-service
           port: 3003
 
-    # ── / → frontend:80 ─────────────────────────────
+    # ── FRONTEND (CATCH-ALL — MUST BE LAST) ──────────────────
     - matches:
         - path:
             type: PathPrefix
@@ -87,9 +64,8 @@ spec:
           port: 80
 
 {{- else }}
-# ╔══════════════════════════════════════════════════════════════════════════════
-# ║  MODE: Legacy Nginx Ingress (global.gateway.enabled = false)
-# ╚══════════════════════════════════════════════════════════════════════════════
+
+# ── FALLBACK: NGINX INGRESS ─────────────────────────────────
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -103,6 +79,7 @@ metadata:
     {{- range $k, $v := $global.ingress.annotations }}
     {{ $k }}: {{ $v | quote }}
     {{- end }}
+
 spec:
   ingressClassName: {{ $global.ingress.className }}
   rules:
@@ -139,4 +116,5 @@ spec:
                 name: frontend
                 port:
                   number: 80
+
 {{- end }}
